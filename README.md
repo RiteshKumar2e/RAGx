@@ -516,13 +516,26 @@ pre-ping and recycling enabled (Turso is remote, unlike a local SQLite file).
 
 > **Windows note.** `libsql-experimental` publishes prebuilt wheels for
 > **Linux x86_64 and macOS only**. On Windows pip compiles it from Rust source,
-> which needs the [Rust toolchain](https://rustup.rs) plus `pip install cmake`.
-> If that install step fails on your machine, drop the `sqlalchemy-libsql` line
-> from `requirements.txt` — RAGX runs on local SQLite without it, and only needs
-> it when `TURSO_DATABASE_URL` is set.
+> which requires all three of:
 >
-> When the driver is missing but Turso *is* configured, RAGX fails at startup
-> with an explicit message. It never silently falls back to another database.
+> - the [Rust toolchain](https://rustup.rs) (`rustc` + `cargo`)
+> - `pip install cmake`
+> - MSVC C++ build tools **and** the Windows SDK (Visual Studio "Desktop
+>   development with C++"), because the Rust `msvc` target links with `link.exe`
+>
+> Run the install from a **Developer Command Prompt for VS** so the MSVC
+> environment is on `PATH` — a plain shell will not find the linker.
+>
+> If it will not build, drop the `sqlalchemy-libsql` line from
+> `requirements.txt`. RAGX runs on local SQLite without it and only needs it
+> when `TURSO_DATABASE_URL` is set.
+>
+> **Degradation behaviour:** if Turso is configured but the driver is missing,
+> a development environment falls back to local SQLite with a loud warning
+> (logged, and surfaced on `/health` and the Settings page). With
+> `ENVIRONMENT=production` it is a hard startup failure instead — silently
+> writing to a different database than configured is a data-integrity problem,
+> not an inconvenience.
 
 </details>
 
