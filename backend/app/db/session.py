@@ -22,49 +22,90 @@ _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
-def _require_libsql_driver() -> None:
-    """Fail with an actionable message when the Turso driver is absent.
+LIBSQL_DRIVER_HELP = (
+    "The async libSQL driver is unavailable, so Turso cannot be used.\n"
+    '  Install it with:  pip install "sqlalchemy-libsql>=0.2"\n'
+    "  It depends on libsql-experimental, which ships prebuilt wheels for Linux "
+    "and macOS only. On Windows pip compiles it from Rust source, so it needs "
+    "the Rust toolchain (https://rustup.rs) plus `pip install cmake`.\n"
+    "  Alternatively, clear TURSO_DATABASE_URL to use a local SQLite file."
+)
 
-    ``sqlalchemy-libsql < 0.2`` ships only a *sync* dialect, and the async one
-    depends on ``libsql-experimental``, which builds from Rust source on
-    platforms without a prebuilt wheel. Without this check SQLAlchemy raises a
-    bare ``NoSuchModuleError`` that says nothing about how to fix it.
-    """
+
+def libsql_driver_available() -> bool:
     try:
         import sqlalchemy_libsql.aiolibsql  # noqa: F401, PLC0415
-    except ImportError as exc:
+
+        return True
+    except ImportError:
+        return False
+
+
+def _resolve_database_url(settings) -> tuple[str, str | None]:
+    """Return ``(url, degradation_warning)``.
+
+    When Turso is configured but its driver cannot be imported, development
+    environments fall back to a local SQLite file with a loud warning -- the
+    same explicit-degradation contract used for Qdrant, Neo4j and embeddings.
+
+    Production is different: quietly writing to a *different database* than the
+    operator configured is a data-integrity problem, not an inconvenience. There
+    the missing driver is a hard failure.
+    """
+    url = settings.sqlalchemy_url
+    if not settings.uses_turso or libsql_driver_available():
+        return url, None
+
+    if settings.environment == "production":
         raise RuntimeError(
-            "Turso is configured (TURSO_DATABASE_URL) but the async libSQL driver "
-            "is unavailable.\n"
-            "  Install it with:  pip install \"sqlalchemy-libsql>=0.2\"\n"
-            "  That pulls in libsql-experimental, which compiles from Rust source "
-            "when no wheel exists for your platform — it needs the Rust toolchain "
-            "and cmake (`pip install cmake`).\n"
-            "  If it will not build, unset TURSO_DATABASE_URL to fall back to a "
-            "local SQLite file."
-        ) from exc
+            f"Turso is configured (TURSO_DATABASE_URL) but its driver is missing, and "
+            f"ENVIRONMENT=production so RAGX will not silently use a different "
+            f"database.\n{LIBSQL_DRIVER_HELP}"
+        )
+
+    warning = (
+        "TURSO_DATABASE_URL is set but the async libSQL driver is not installed — "
+        "falling back to a local SQLite file. Data will NOT go to Turso. "
+        + LIBSQL_DRIVER_HELP
+    )
+    log.warning("db.turso_driver_missing_using_sqlite", detail=warning.replace("\n", " "))
+
+    fallback = settings.model_copy(update={"turso_database_url": "", "database_url": ""})
+    return fallback.sqlalchemy_url, warning
+
+
+#: Set when Turso was requested but unavailable; surfaced by /health and /settings.
+DEGRADATION_WARNING: str | None = None
 
 
 def get_engine() -> AsyncEngine:
-    global _engine
+    global _engine, DEGRADATION_WARNING
     if _engine is None:
         settings = get_settings()
-        url = settings.sqlalchemy_url
+        url, DEGRADATION_WARNING = _resolve_database_url(settings)
         kwargs: dict = {"echo": settings.db_echo, "future": True}
 
-        if settings.uses_turso:
-            _require_libsql_driver()
-            # Turso is a remote HTTP database, so connections are worth reusing
-            # and worth checking for staleness — unlike a local SQLite file.
+        if "aiolibsql" in url:
+            # Turso is a remote database, so connections are worth reusing and
+            # worth checking for staleness — unlike a local SQLite file.
             kwargs.update(pool_pre_ping=True, pool_recycle=300)
 
         _engine = create_async_engine(url, **kwargs)
         log.info(
             "db.engine_created",
-            flavour=settings.database_flavour,
+            flavour="turso" if "aiolibsql" in url else "sqlite",
             dialect=url.split("://", 1)[0],
+            degraded=bool(DEGRADATION_WARNING),
         )
     return _engine
+
+
+def active_database_flavour() -> str:
+    """What the engine is *actually* connected to, after any degradation."""
+    settings = get_settings()
+    if DEGRADATION_WARNING:
+        return "sqlite"
+    return settings.database_flavour
 
 
 def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
@@ -100,11 +141,21 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
 
 
 async def dispose_engine() -> None:
-    global _engine, _sessionmaker
+    global _engine, _sessionmaker, DEGRADATION_WARNING
     if _engine is not None:
         await _engine.dispose()
     _engine = None
     _sessionmaker = None
+    DEGRADATION_WARNING = None
 
 
-__all__ = ["get_engine", "get_sessionmaker", "get_session", "session_scope", "dispose_engine"]
+__all__ = [
+    "get_engine",
+    "get_sessionmaker",
+    "get_session",
+    "session_scope",
+    "dispose_engine",
+    "active_database_flavour",
+    "libsql_driver_available",
+    "LIBSQL_DRIVER_HELP",
+]

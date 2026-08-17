@@ -32,21 +32,28 @@ VERSION = "1.0.0"
 
 
 async def _database_health() -> dict[str, Any]:
+    from app.db import session as session_module  # noqa: PLC0415
+
     settings = get_settings()
-    flavour = settings.database_flavour
     try:
         engine = get_engine()
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        return {"engine": flavour, "healthy": True, "status_text": "healthy"}
+        # Report what the engine actually connected to, not what was requested.
+        flavour = session_module.active_database_flavour()
+        payload: dict[str, Any] = {"engine": flavour, "healthy": True, "status_text": "healthy"}
+        if session_module.DEGRADATION_WARNING:
+            payload["requested"] = "turso"
+            payload["degraded"] = True
+            payload["note"] = session_module.DEGRADATION_WARNING.replace("\n", " ")
+        return payload
     except Exception as exc:
-        # The Turso driver message is long and actionable; keep more of it.
-        limit = 600 if flavour == "turso" else 200
+        # Driver/configuration messages are long and actionable; keep more of them.
         return {
-            "engine": flavour,
+            "engine": settings.database_flavour,
             "healthy": False,
             "status_text": "unhealthy",
-            "error": str(exc)[:limit],
+            "error": str(exc)[:600],
         }
 
 
@@ -118,7 +125,11 @@ class HealthService:
                 "semantically, so retrieval quality and any benchmark numbers are not representative. "
                 "Set EMBEDDING_PROVIDER=gemini with a GEMINI_API_KEY for real embeddings."
             )
-        if settings.database_flavour == "sqlite":
+        from app.db import session as session_module  # noqa: PLC0415
+
+        if session_module.DEGRADATION_WARNING:
+            warnings.append(session_module.DEGRADATION_WARNING.replace("\n", " "))
+        elif settings.database_flavour == "sqlite":
             warnings.append(
                 "Running on a local SQLite file. This is fine for development; set "
                 "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a hosted libSQL database "

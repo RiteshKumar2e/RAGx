@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,17 +45,21 @@ class Settings(BaseSettings):
     ragx_api_key: str = ""
 
     # -- Cloud LLM providers (NO local LLMs are supported by design) --------
+    # Model defaults use the provider's rolling "latest" aliases rather than a
+    # pinned version. Pinned ids get retired -- `gemini-2.0-flash` and
+    # `text-embedding-004` both 404'd after release -- which breaks a clone of
+    # this repo months later. For reproducible benchmark numbers, pin an exact
+    # version in .env and record it alongside the results (see docs/EVALUATION.md).
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_reasoning_model: str = "gemini-2.0-flash"
-    # `text-embedding-004` was retired from the v1beta API; `gemini-embedding-001`
-    # is the current stable embedding model. It emits 3072 dimensions natively
-    # and supports truncation to 768 / 1536 via `output_dimensionality`.
+    gemini_model: str = "gemini-flash-latest"
+    gemini_reasoning_model: str = "gemini-flash-latest"
+    # `gemini-embedding-001` emits 3072 dimensions natively and supports
+    # truncation to 768 / 1536 via `output_dimensionality`.
     gemini_embedding_model: str = "gemini-embedding-001"
 
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
-    groq_fast_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_fast_model: str = "openai/gpt-oss-20b"
 
     primary_llm_provider: Literal["gemini", "groq"] = "gemini"
     fallback_llm_provider: Literal["gemini", "groq", "none"] = "groq"
@@ -145,6 +149,30 @@ class Settings(BaseSettings):
     cache_max_entries: int = 512
 
     # ---------------------------------------------------------------- helpers
+    #: Fields masked in ``repr``. Pydantic reprs the whole model in validation
+    #: errors, tracebacks and pytest assertion output, which would otherwise
+    #: print live credentials to a terminal or CI log.
+    SECRET_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "gemini_api_key",
+            "groq_api_key",
+            "qdrant_api_key",
+            "neo4j_password",
+            "turso_auth_token",
+            "ragx_api_key",
+            "aws_secret_access_key",
+            "database_url",       # may embed credentials
+            "turso_database_url",  # may embed a token in the query string
+        }
+    )
+
+    def __repr_args__(self):  # type: ignore[override]
+        for key, value in super().__repr_args__():
+            if key in self.SECRET_FIELDS and value:
+                yield key, "***redacted***"
+            else:
+                yield key, value
+
     @field_validator("log_level")
     @classmethod
     def _upper(cls, v: str) -> str:

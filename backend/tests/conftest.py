@@ -31,6 +31,11 @@ os.environ.update(
         "STORAGE_LOCAL_PATH": str(TEMP_ROOT / "objects"),
         "GEMINI_API_KEY": "",
         "GROQ_API_KEY": "",
+        # Explicitly neutralise hosted-database settings. A developer's real
+        # .env would otherwise bleed into the suite and point tests at a live
+        # Turso database.
+        "TURSO_DATABASE_URL": "",
+        "TURSO_AUTH_TOKEN": "",
         "EMBEDDING_PROVIDER": "hashing",
         "EMBEDDING_DIMENSION": "256",
         "EXTRACT_ENTITIES": "true",

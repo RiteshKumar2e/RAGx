@@ -132,15 +132,30 @@ class AdaptiveRouter:
         if (analysis.requires_visual or analysis.requires_tabular) and multimodal_available:
             decision.primary = StrategyName.MULTIMODAL
             config.modalities = analysis.modalities
-            rules.append(
-                {
-                    "rule": "visual_or_tabular_requirement",
-                    "reason": (
-                        "The query references figures, charts or tables, so retrieval must "
-                        "cover non-text modalities."
-                    ),
-                }
+
+            # Name the modality that actually triggered this, and note when the
+            # signal came from the LLM rather than the query's own wording --
+            # otherwise the explanation claims the query "references figures"
+            # for a query where the lexical check found no such reference.
+            kinds = [
+                k
+                for k, on in (("visual", analysis.requires_visual), ("tabular", analysis.requires_tabular))
+                if on
+            ]
+            lexical = analysis.signals.get("markers", {})
+            inferred = (analysis.requires_visual and not lexical.get("visual")) or (
+                analysis.requires_tabular and not lexical.get("tabular")
             )
+            reason = (
+                f"The query needs {' and '.join(kinds)} evidence, so retrieval must cover "
+                f"non-text modalities."
+            )
+            if inferred:
+                reason += (
+                    " This was inferred by query analysis rather than stated literally in the "
+                    "query wording."
+                )
+            rules.append({"rule": "visual_or_tabular_requirement", "reason": reason})
             # Figure captions are terse; keyword matching on the label matters.
             if analysis.keyword_requirement >= 0.5:
                 decision.parallel.append(StrategyName.HYBRID)

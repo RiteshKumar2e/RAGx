@@ -570,7 +570,7 @@ rm -rf backend/data
 ### Tests
 
 ```bash
-cd backend && pytest              # 103 tests
+cd backend && pytest              # 120 tests
 cd frontend && npm run lint && npm run build
 ```
 
