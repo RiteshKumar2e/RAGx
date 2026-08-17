@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -444,8 +444,13 @@ export default function Evaluation() {
                 </thead>
                 <tbody>
                   {['Retrieval', 'Generation', 'System'].map((group) => (
-                    <>
-                      <tr key={group} className="bg-ink-50/60">
+                    // The Fragment is the list item, so the key belongs here.
+                    // A shorthand <> cannot carry one, which is what React was
+                    // warning about: each group renders a heading row plus its
+                    // metric rows, so they have to be wrapped to stay siblings
+                    // inside <tbody>.
+                    <Fragment key={group}>
+                      <tr className="bg-ink-50/60">
                         <td
                           colSpan={rows.length + 1}
                           className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500"
@@ -485,7 +490,7 @@ export default function Evaluation() {
                           })}
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                   <tr className="border-t border-ink-200 bg-ink-50/40">
                     <td className="sticky left-0 z-10 bg-ink-50/40 px-4 py-2 text-ink-500">
