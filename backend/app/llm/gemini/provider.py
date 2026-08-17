@@ -191,12 +191,24 @@ class GeminiProvider(LLMProvider):
             raise ProviderError("The Gemini streaming call failed.", detail=str(exc)) from exc
 
     # ------------------------------------------------------------ embeddings
-    async def embed(self, texts: list[str], task_type: str = "retrieval_document") -> list[list[float]]:
+    async def embed(
+        self,
+        texts: list[str],
+        task_type: str = "retrieval_document",
+        dimension: int | None = None,
+    ) -> list[list[float]]:
         if not texts:
             return []
         client = self._ensure_client()
         types = self._types
-        config = types.EmbedContentConfig(task_type=task_type.upper())
+
+        config_kwargs: dict[str, Any] = {"task_type": task_type.upper()}
+        if dimension:
+            # gemini-embedding-001 emits 3072 dimensions by default. Requesting
+            # the configured size keeps the Qdrant collection dimension stable
+            # and avoids re-indexing when the model's native size changes.
+            config_kwargs["output_dimensionality"] = dimension
+        config = types.EmbedContentConfig(**config_kwargs)
         try:
             response = await asyncio.wait_for(
                 client.aio.models.embed_content(

@@ -124,7 +124,16 @@ class HealthService:
                 "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a hosted libSQL database "
                 "in production."
             )
-        if not settings.neo4j_uri:
+        if settings.neo4j_uri:
+            from app.indexing.graph_store import validate_neo4j_uri  # noqa: PLC0415
+
+            problem = validate_neo4j_uri(settings.neo4j_uri)
+            if problem:
+                warnings.append(
+                    f"{problem} Graph RAG is running on the embedded NetworkX store until this "
+                    "is corrected."
+                )
+        else:
             warnings.append(
                 "NEO4J_URI is not set, so Graph RAG uses the embedded NetworkX store. "
                 "Traversal works; Neo4j adds scale and Cypher access."

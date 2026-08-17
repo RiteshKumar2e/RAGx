@@ -136,6 +136,9 @@ class NetworkXGraphStore(GraphStore):
         self._graph: Any = None
         self._lock = asyncio.Lock()
         self._loaded = False
+        # Set when this store was chosen because Neo4j was misconfigured, so
+        # health reporting can say *why* the embedded store is in use.
+        self.config_warning: str | None = None
 
     def _new_graph(self) -> Any:
         import networkx as nx  # noqa: PLC0415
@@ -505,7 +508,11 @@ class NetworkXGraphStore(GraphStore):
                 "mode": "embedded",
                 "entities": stats["entities"],
                 "relations": stats["relations"],
-                "note": "Neo4j is not configured; using the embedded NetworkX graph store.",
+                "note": (
+                    self.config_warning
+                    or "Neo4j is not configured; using the embedded NetworkX graph store."
+                ),
+                "misconfigured_neo4j": bool(self.config_warning),
             }
         except Exception as exc:  # pragma: no cover
             return {"store": "graph", "backend": self.backend, "healthy": False, "error": str(exc)[:200]}
@@ -797,19 +804,63 @@ class Neo4jGraphStore(GraphStore):
 # ===========================================================================
 _store: GraphStore | None = None
 
+# Schemes the Neo4j driver accepts. Anything else cannot connect.
+NEO4J_SCHEMES = ("bolt://", "bolt+s://", "bolt+ssc://", "neo4j://", "neo4j+s://", "neo4j+ssc://")
+
+# Neo4j Aura shows an instance ID (e.g. "b7f9149b") next to the connection URI.
+# Pasting the ID alone is a common mistake, so it gets a targeted message.
+_AURA_ID = re.compile(r"^[0-9a-f]{8}$", re.IGNORECASE)
+
+
+def validate_neo4j_uri(uri: str) -> str | None:
+    """Return a human-readable problem with ``uri``, or ``None`` if it is usable."""
+    value = (uri or "").strip()
+    if not value:
+        return "NEO4J_URI is empty."
+    if value.startswith(NEO4J_SCHEMES):
+        return None
+    if _AURA_ID.match(value):
+        return (
+            f"NEO4J_URI is set to '{value}', which looks like a Neo4j Aura *instance ID*, "
+            f"not a connection URI. Use the full URI instead:  "
+            f"neo4j+s://{value}.databases.neo4j.io"
+        )
+    return (
+        f"NEO4J_URI='{value}' has no supported scheme. It must start with one of: "
+        f"{', '.join(s.rstrip('://') for s in NEO4J_SCHEMES)}. "
+        f"Example: neo4j+s://<id>.databases.neo4j.io or bolt://localhost:7687"
+    )
+
 
 def get_graph_store() -> GraphStore:
-    """Neo4j when configured, otherwise the embedded NetworkX store."""
+    """Neo4j when correctly configured, otherwise the embedded NetworkX store.
+
+    A malformed ``NEO4J_URI`` degrades to the embedded store with a loud warning
+    rather than selecting a Neo4j backend that fails on every call — which would
+    silently disable Graph RAG while reporting the graph as "configured".
+    """
     global _store
     if _store is not None:
         return _store
+
     settings = get_settings()
     if settings.neo4j_uri:
-        _store = Neo4jGraphStore()
-        log.info("graph.backend_selected", backend="neo4j")
-    else:
+        problem = validate_neo4j_uri(settings.neo4j_uri)
+        if problem is None:
+            _store = Neo4jGraphStore()
+            log.info("graph.backend_selected", backend="neo4j")
+            return _store
+        log.warning(
+            "graph.neo4j_uri_invalid_using_embedded_store",
+            detail=problem,
+            action="Fix NEO4J_URI, or leave it empty to use the embedded store deliberately.",
+        )
         _store = NetworkXGraphStore()
-        log.info("graph.backend_selected", backend="networkx", reason="NEO4J_URI is not set")
+        _store.config_warning = problem
+        return _store
+
+    _store = NetworkXGraphStore()
+    log.info("graph.backend_selected", backend="networkx", reason="NEO4J_URI is not set")
     return _store
 
 

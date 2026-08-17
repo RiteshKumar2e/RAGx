@@ -48,7 +48,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
     gemini_reasoning_model: str = "gemini-2.0-flash"
-    gemini_embedding_model: str = "text-embedding-004"
+    # `text-embedding-004` was retired from the v1beta API; `gemini-embedding-001`
+    # is the current stable embedding model. It emits 3072 dimensions natively
+    # and supports truncation to 768 / 1536 via `output_dimensionality`.
+    gemini_embedding_model: str = "gemini-embedding-001"
 
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"

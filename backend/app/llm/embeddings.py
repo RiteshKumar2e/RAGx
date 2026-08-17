@@ -76,7 +76,9 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         out: list[list[float]] = []
         for start in range(0, len(texts), self.batch_size):
             batch = [t if t.strip() else " " for t in texts[start : start + self.batch_size]]
-            vectors = await self._provider.embed(batch, task_type=task_type)
+            vectors = await self._provider.embed(
+                batch, task_type=task_type, dimension=self.dimension
+            )
             if len(vectors) != len(batch):
                 raise ProviderError(
                     f"Gemini returned {len(vectors)} embeddings for {len(batch)} inputs."
