@@ -148,6 +148,28 @@ class Settings(BaseSettings):
     def _upper(cls, v: str) -> str:
         return v.upper()
 
+    @field_validator("qdrant_path", "storage_local_path", "graph_fallback_path")
+    @classmethod
+    def _resolve_data_path(cls, value: str) -> str:
+        """Anchor relative data paths to the backend directory.
+
+        Users start the server from either the repository root or ``backend/``,
+        and may keep ``.env`` in either place. Resolving against the current
+        working directory would silently create a second, empty data tree on the
+        wrong side of that choice -- so relative paths are always anchored to
+        ``backend/`` instead. A leading ``./backend/`` is tolerated for configs
+        written relative to the repository root.
+        """
+        if not value:
+            return value
+        path = Path(value)
+        if path.is_absolute():
+            return str(path)
+        parts = path.parts
+        if parts and parts[0] == "backend":
+            path = Path(*parts[1:]) if len(parts) > 1 else Path(".")
+        return str((BACKEND_ROOT / path).resolve())
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

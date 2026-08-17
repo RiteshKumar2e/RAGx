@@ -66,6 +66,9 @@ export function SystemProvider({ children }) {
   return <SystemContext.Provider value={value}>{children}</SystemContext.Provider>;
 }
 
+// Co-locating the provider and its consumer hook is the idiomatic React
+// context pattern; it costs Fast Refresh granularity for this one file only.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSystem() {
   const context = useContext(SystemContext);
   if (!context) throw new Error('useSystem must be used inside a SystemProvider.');

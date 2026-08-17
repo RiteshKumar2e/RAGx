@@ -86,6 +86,8 @@ export function ToastProvider({ children }) {
   );
 }
 
+// See the note in SystemContext.jsx — provider and hook intentionally share a file.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) throw new Error('useToast must be used inside a ToastProvider.');

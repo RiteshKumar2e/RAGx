@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# Optional infrastructure for RAGX.
+#
+# RAGX runs with NO infrastructure at all: Qdrant has an embedded mode, the
+# graph falls back to an in-process NetworkX store, and PostgreSQL falls back to
+# SQLite. This compose file is for when you want the production backends.
+#
+#   docker compose up -d
+#
+# Then set in backend/.env:
+#   QDRANT_URL=http://localhost:6333
+#   NEO4J_URI=bolt://localhost:7687
+#   NEO4J_PASSWORD=ragx_dev_password
+#   DATABASE_URL=postgresql+asyncpg://ragx:ragx_dev_password@localhost:5432/ragx
+#   STORAGE_BACKEND=s3
+#   S3_ENDPOINT_URL=http://localhost:9000
+#   S3_BUCKET=ragx
+#   AWS_ACCESS_KEY_ID=ragx
+#   AWS_SECRET_ACCESS_KEY=ragx_dev_password
+#
+# The passwords below are development defaults. Change them for anything that
+# is reachable from outside your machine.
+# ---------------------------------------------------------------------------
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: ragx-qdrant
+    restart: unless-stopped
+    ports:
+      - '6333:6333'   # REST
+      - '6334:6334'   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ['CMD-SHELL', 'bash -c ":> /dev/tcp/127.0.0.1/6333" || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: ragx-neo4j
+    restart: unless-stopped
+    ports:
+      - '7474:7474'   # HTTP browser
+      - '7687:7687'   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/ragx_dev_password
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512M
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:7474 || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ragx-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: ragx
+      POSTGRES_PASSWORD: ragx_dev_password
+      POSTGRES_DB: ragx
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ragx -d ragx']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # S3-compatible object storage for original files and extracted figures.
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: ragx-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'   # S3 API
+      - '9001:9001'   # Web console
+    environment:
+      MINIO_ROOT_USER: ragx
+      MINIO_ROOT_PASSWORD: ragx_dev_password
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # One-shot: creates the bucket RAGX writes to, then exits.
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-05T11-29-45Z
+    container_name: ragx-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ragx ragx_dev_password &&
+      mc mb --ignore-existing local/ragx &&
+      echo 'Bucket ragx is ready.'
+      "
+
+volumes:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  postgres_data:
+  minio_data:
