@@ -1,11 +1,17 @@
 """Database URL resolution and Turso driver degradation.
 
-The libSQL async driver has no Windows wheel, so a Turso-configured machine may
-legitimately not be able to install it. The rules pinned here:
+The driver's availability is forced with a monkeypatch rather than read from the
+machine running the tests. Both branches matter and both must stay covered: the
+degradation path is exactly what runs on a host where the driver is missing, so
+it cannot be left untested simply because this host has it installed.
 
-* development -> fall back to local SQLite with a loud, surfaced warning
-* production  -> hard failure, because silently writing to a different database
-                 than the operator configured is a data-integrity problem
+The rules pinned here:
+
+* driver present -> use Turso
+* development, driver missing -> fall back to local SQLite with a loud,
+  surfaced warning
+* production, driver missing  -> hard failure, because silently writing to a
+  different database than the operator configured is a data-integrity problem
 """
 
 from __future__ import annotations
@@ -13,7 +19,8 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import Settings
-from app.db.session import _resolve_database_url, libsql_driver_available
+from app.db import session as session_module
+from app.db.session import _resolve_database_url
 
 
 @pytest.fixture
@@ -29,29 +36,38 @@ def turso_settings():
     return _make
 
 
+@pytest.fixture
+def driver(monkeypatch):
+    """Force the outcome of the libSQL driver probe."""
+
+    def _set(available: bool) -> None:
+        monkeypatch.setattr(
+            session_module, "libsql_driver_available", lambda: available
+        )
+
+    return _set
+
+
 def test_sqlite_needs_no_driver_check() -> None:
     url, warning = _resolve_database_url(Settings(database_url="", turso_database_url=""))
     assert url.startswith("sqlite+aiosqlite://")
     assert warning is None
 
 
-@pytest.mark.skipif(
-    libsql_driver_available(), reason="libSQL driver installed; degradation path not reachable"
-)
-def test_development_falls_back_to_sqlite_with_warning(turso_settings) -> None:
+def test_development_falls_back_to_sqlite_with_warning(turso_settings, driver) -> None:
+    driver(False)
     url, warning = _resolve_database_url(turso_settings("development"))
     assert url.startswith("sqlite+aiosqlite://"), "must not use the unusable Turso dialect"
     assert warning, "degradation must be reported, never silent"
     assert "Turso" in warning
     assert "will NOT go to Turso" in warning
     # The message must tell the operator how to fix it.
-    assert "sqlalchemy-libsql" in warning
+    assert "pip install" in warning
+    assert "libsql" in warning
 
 
-@pytest.mark.skipif(
-    libsql_driver_available(), reason="libSQL driver installed; degradation path not reachable"
-)
-def test_production_refuses_to_switch_databases(turso_settings) -> None:
+def test_production_refuses_to_switch_databases(turso_settings, driver) -> None:
+    driver(False)
     with pytest.raises(RuntimeError) as excinfo:
         _resolve_database_url(turso_settings("production"))
     message = str(excinfo.value)
@@ -59,10 +75,8 @@ def test_production_refuses_to_switch_databases(turso_settings) -> None:
     assert "will not silently use a different database" in message
 
 
-@pytest.mark.skipif(
-    not libsql_driver_available(), reason="libSQL driver not installed on this platform"
-)
-def test_turso_used_directly_when_driver_present(turso_settings) -> None:
+def test_turso_used_directly_when_driver_present(turso_settings, driver) -> None:
+    driver(True)
     url, warning = _resolve_database_url(turso_settings("development"))
     assert url.startswith("sqlite+aiolibsql://")
     assert warning is None

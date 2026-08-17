@@ -204,6 +204,29 @@ typed edges, bounded-depth BFS with confidence decay per hop, shortest paths
 between entities — in-process. Both return `GraphPath` objects carrying the
 chunk each edge was extracted from, so a graph hit is ordinary citable evidence.
 
+**Why the relational layer ships its own Turso dialect.** Turso speaks SQLite,
+so models and queries are identical to the local-file path — but its official
+SQLAlchemy package (`sqlalchemy-libsql`) depends on `libsql-experimental`, which
+has no Windows wheel and needs a full Rust and MSVC toolchain to build. RAGX
+uses the maintained `libsql` driver instead, through
+`app/db/libsql_dialect.py`. Two adaptations are required and are covered by
+tests in `tests/test_libsql_dialect.py`:
+
+- **PEP-249 conformance** (`app/db/libsql_dbapi.py`). The driver defines only
+  `Error` and raises a bare `ValueError` for every SQL failure. SQLAlchemy uses
+  the standard exception hierarchy to distinguish a constraint violation from a
+  dropped connection, so the shim reconstructs it from the driver's message. The
+  classification checks for a SQL-level failure *before* the transport markers,
+  because every message is wrapped in a `Hrana:` envelope — otherwise a
+  duplicate insert would look like a network fault and the pool would discard a
+  healthy connection.
+- **Async adaptation.** `libsql` is synchronous, and each call is a network
+  round-trip. Running it inline would stall the event loop for every other
+  in-flight request, and SQLAlchemy's async engine rejects a dialect that never
+  suspends (`AwaitRequired`). Each call therefore runs in a worker thread via
+  `await_only(asyncio.to_thread(...))`, with result rows buffered inside that
+  same thread so fetches cost no additional hops.
+
 **Why large files never touch the database.** `Document.object_key` points at
 object storage. SQL holds metadata and extracted text only.
 

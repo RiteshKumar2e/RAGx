@@ -510,25 +510,12 @@ TURSO_DATABASE_URL=libsql://ragx-<org>.turso.io
 TURSO_AUTH_TOKEN=<token>
 ```
 
-The driver (`sqlalchemy-libsql`) ships in `requirements.txt`, so nothing extra
-is needed. RAGX connects over the `sqlite+aiolibsql://` dialect, with connection
+The driver (`libsql`) ships in `requirements.txt` and has prebuilt wheels for
+Windows, Linux and macOS, so nothing extra is needed — no Rust toolchain, no
+compiler. RAGX connects over the `sqlite+aiolibsql://` dialect, with connection
 pre-ping and recycling enabled (Turso is remote, unlike a local SQLite file).
 
-> **Windows note.** `libsql-experimental` publishes prebuilt wheels for
-> **Linux x86_64 and macOS only**. On Windows pip compiles it from Rust source,
-> which requires all three of:
->
-> - the [Rust toolchain](https://rustup.rs) (`rustc` + `cargo`)
-> - `pip install cmake`
-> - MSVC C++ build tools **and** the Windows SDK (Visual Studio "Desktop
->   development with C++"), because the Rust `msvc` target links with `link.exe`
->
-> Run the install from a **Developer Command Prompt for VS** so the MSVC
-> environment is on `PATH` — a plain shell will not find the linker.
->
-> If it will not build, drop the `sqlalchemy-libsql` line from
-> `requirements.txt`. RAGX runs on local SQLite without it and only needs it
-> when `TURSO_DATABASE_URL` is set.
+
 >
 > **Degradation behaviour:** if Turso is configured but the driver is missing,
 > a development environment falls back to local SQLite with a loud warning
@@ -588,7 +575,7 @@ rm -rf backend/data
 ### Tests
 
 ```bash
-cd backend && pytest              # 120 tests
+cd backend && pytest              # 137 tests
 cd frontend && npm run lint && npm run build
 ```
 

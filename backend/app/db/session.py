@@ -23,18 +23,23 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
 LIBSQL_DRIVER_HELP = (
-    "The async libSQL driver is unavailable, so Turso cannot be used.\n"
-    '  Install it with:  pip install "sqlalchemy-libsql>=0.2"\n'
-    "  It depends on libsql-experimental, which ships prebuilt wheels for Linux "
-    "and macOS only. On Windows pip compiles it from Rust source, so it needs "
-    "the Rust toolchain (https://rustup.rs) plus `pip install cmake`.\n"
+    "The libSQL driver is unavailable, so Turso cannot be used.\n"
+    '  Install it with:  pip install "libsql>=0.1.11"\n'
+    "  It ships prebuilt wheels for Windows, Linux and macOS, so no Rust "
+    "toolchain is required.\n"
     "  Alternatively, clear TURSO_DATABASE_URL to use a local SQLite file."
 )
 
 
 def libsql_driver_available() -> bool:
+    """True when Turso can actually be reached.
+
+    RAGX drives ``libsql`` through its own dialect (:mod:`app.db.libsql_dialect`)
+    rather than the ``sqlalchemy-libsql`` package, so this checks for the driver
+    itself -- see that module for why.
+    """
     try:
-        import sqlalchemy_libsql.aiolibsql  # noqa: F401, PLC0415
+        import libsql  # noqa: F401, PLC0415
 
         return True
     except ImportError:
@@ -125,6 +130,10 @@ def get_engine() -> AsyncEngine:
 
         is_turso = "aiolibsql" in url or "libsql" in url
         if is_turso:
+            # Claim the sqlite+aiolibsql name before the engine resolves it.
+            from app.db.libsql_dialect import register  # noqa: PLC0415
+
+            register()
             # Turso is a remote database, so connections are worth reusing and
             # worth checking for staleness — unlike a local SQLite file.
             kwargs.update(pool_pre_ping=True, pool_recycle=300)
