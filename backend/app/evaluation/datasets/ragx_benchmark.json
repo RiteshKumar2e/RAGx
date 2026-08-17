@@ -1,0 +1,226 @@
+{
+  "name": "ragx_benchmark",
+  "version": "1.0.0",
+  "description": "Corpus-agnostic benchmark covering the eight query classes the RAGX router discriminates between. Questions are phrased against the *structure* of a technical/research corpus rather than any particular document, so the suite runs against whatever the user has indexed. Relevance labels are absent by default and are produced by pooled LLM judgement at run time (see docs/EVALUATION.md); the 'poor_retrieval' items are adversarial by design and are expected to trigger abstention.",
+  "label_source": "pooled",
+  "categories": {
+    "simple": "Single-fact lookups answerable from one passage.",
+    "keyword": "Exact terminology, identifiers, acronyms and version strings.",
+    "semantic": "Conceptual questions whose wording differs from the source text.",
+    "multi_hop": "Require chaining two or more separate facts.",
+    "relationship": "Ask how named entities connect to one another.",
+    "cross_document": "Require synthesising across two or more documents.",
+    "multimodal": "Concern figures, charts, diagrams or tables.",
+    "poor_retrieval": "Have no answer in any reasonable corpus; correct behaviour is abstention.",
+    "complex_research": "Open-ended analytical questions needing planning and decomposition."
+  },
+  "questions": [
+    {
+      "id": "simple-01",
+      "question": "What is the main contribution described in the abstract?",
+      "category": "simple",
+      "difficulty": "easy",
+      "notes": "Expected route: Naive RAG. Tests that the router does not over-provision."
+    },
+    {
+      "id": "simple-02",
+      "question": "Which dataset was used for evaluation?",
+      "category": "simple",
+      "difficulty": "easy",
+      "notes": "Single-fact lookup; usually stated once in an experiments section."
+    },
+    {
+      "id": "simple-03",
+      "question": "What optimizer was used during training?",
+      "category": "simple",
+      "difficulty": "easy",
+      "notes": "Direct lookup with a narrow answer span."
+    },
+    {
+      "id": "simple-04",
+      "question": "How many layers does the proposed model have?",
+      "category": "simple",
+      "difficulty": "easy",
+      "notes": "Numeric lookup; exercises the numeric-consistency check in verification."
+    },
+
+    {
+      "id": "keyword-01",
+      "question": "What is the reported mAP score and on which benchmark was it measured?",
+      "category": "keyword",
+      "difficulty": "moderate",
+      "notes": "Acronym plus a number. Expected route: Hybrid RAG with sparse weighting."
+    },
+    {
+      "id": "keyword-02",
+      "question": "Which backbone architecture is used as the feature extractor?",
+      "category": "keyword",
+      "difficulty": "moderate",
+      "notes": "Model names are rare tokens; BM25 should carry this query."
+    },
+    {
+      "id": "keyword-03",
+      "question": "What learning rate and batch size were used in the experiments?",
+      "category": "keyword",
+      "difficulty": "moderate",
+      "notes": "Two exact numeric values, typically co-located in one passage."
+    },
+    {
+      "id": "keyword-04",
+      "question": "What loss function is defined in the methodology section?",
+      "category": "keyword",
+      "difficulty": "moderate",
+      "notes": "Section-scoped exact-term retrieval."
+    },
+
+    {
+      "id": "semantic-01",
+      "question": "Why does the proposed approach work better than earlier attempts at the same problem?",
+      "category": "semantic",
+      "difficulty": "hard",
+      "notes": "Conceptual phrasing unlikely to match source wording. Expected route: HyDE."
+    },
+    {
+      "id": "semantic-02",
+      "question": "What underlying intuition motivates the design of this method?",
+      "category": "semantic",
+      "difficulty": "hard",
+      "notes": "High semantic requirement, low keyword requirement."
+    },
+    {
+      "id": "semantic-03",
+      "question": "Summarise the key findings and what they imply for practitioners.",
+      "category": "semantic",
+      "difficulty": "moderate",
+      "notes": "Summarisation intent; requires breadth rather than a single passage."
+    },
+
+    {
+      "id": "multihop-01",
+      "question": "Which model achieved the best result, and what training data was that model trained on?",
+      "category": "multi_hop",
+      "difficulty": "hard",
+      "notes": "Two dependent hops: identify the model, then look up its training data."
+    },
+    {
+      "id": "multihop-02",
+      "question": "What limitation is identified in the conclusion, and which component of the architecture causes it?",
+      "category": "multi_hop",
+      "difficulty": "hard",
+      "notes": "Requires linking a stated limitation back to an architectural cause."
+    },
+    {
+      "id": "multihop-03",
+      "question": "Which evaluation metric is reported, and how is that metric defined in this work?",
+      "category": "multi_hop",
+      "difficulty": "moderate",
+      "notes": "Fact plus definition, usually in different sections."
+    },
+
+    {
+      "id": "relationship-01",
+      "question": "How does the proposed method relate to the prior work it builds on?",
+      "category": "relationship",
+      "difficulty": "hard",
+      "notes": "Expected route: Graph RAG. Tests EXTENDS / CITES traversal."
+    },
+    {
+      "id": "relationship-02",
+      "question": "Which components does the architecture use, and how do they connect to one another?",
+      "category": "relationship",
+      "difficulty": "hard",
+      "notes": "Tests USES / PART_OF traversal across the entity graph."
+    },
+    {
+      "id": "relationship-03",
+      "question": "What is the relationship between the dataset used and the task being solved?",
+      "category": "relationship",
+      "difficulty": "moderate",
+      "notes": "Tests EVALUATED_ON / APPLIED_TO edges."
+    },
+
+    {
+      "id": "crossdoc-01",
+      "question": "Compare the approaches taken across the indexed documents and identify where they disagree.",
+      "category": "cross_document",
+      "difficulty": "hard",
+      "notes": "Requires document-diversity enforcement in fusion."
+    },
+    {
+      "id": "crossdoc-02",
+      "question": "Which methods appear in more than one of the indexed documents?",
+      "category": "cross_document",
+      "difficulty": "hard",
+      "notes": "Entity co-occurrence across documents; favours Graph RAG."
+    },
+
+    {
+      "id": "multimodal-01",
+      "question": "What does Figure 1 show, and what trend is visible in it?",
+      "category": "multimodal",
+      "difficulty": "moderate",
+      "notes": "Expected route: Multimodal RAG. Requires figure retrieval plus vision."
+    },
+    {
+      "id": "multimodal-02",
+      "question": "What are the values reported in the results table?",
+      "category": "multimodal",
+      "difficulty": "moderate",
+      "notes": "Tabular retrieval; tests that table chunks survive chunking intact."
+    },
+    {
+      "id": "multimodal-03",
+      "question": "Describe the architecture diagram and the flow of data through it.",
+      "category": "multimodal",
+      "difficulty": "hard",
+      "notes": "Requires the figure image itself, not only its caption."
+    },
+
+    {
+      "id": "poor-01",
+      "question": "What were the quarterly revenue figures for this project in 2019?",
+      "category": "poor_retrieval",
+      "difficulty": "adversarial",
+      "expects_abstention": true,
+      "notes": "No technical corpus contains this. Correct behaviour is abstention, not a plausible guess."
+    },
+    {
+      "id": "poor-02",
+      "question": "Which celebrity endorsed the method described in these documents?",
+      "category": "poor_retrieval",
+      "difficulty": "adversarial",
+      "expects_abstention": true,
+      "notes": "Tests that Corrective RAG detects off-topic retrieval and the verifier abstains."
+    },
+    {
+      "id": "poor-03",
+      "question": "What is the exact street address of the lab where this work was performed?",
+      "category": "poor_retrieval",
+      "difficulty": "adversarial",
+      "expects_abstention": true,
+      "notes": "Superficially answerable-sounding; almost never present. Tests fabrication resistance."
+    },
+
+    {
+      "id": "complex-01",
+      "question": "What are the main limitations of the approach, what evidence supports each limitation, and what would be required to address them?",
+      "category": "complex_research",
+      "difficulty": "hard",
+      "notes": "Expected route: Agentic escalation. Three dependent sub-questions."
+    },
+    {
+      "id": "complex-02",
+      "question": "Trace how the experimental setup supports the claims made in the conclusion, and identify any claim that is not fully supported.",
+      "category": "complex_research",
+      "difficulty": "hard",
+      "notes": "Requires planning, cross-section retrieval and verification."
+    },
+    {
+      "id": "complex-03",
+      "question": "If this method were applied to a different domain, which design choices would need to change, and why?",
+      "category": "complex_research",
+      "difficulty": "hard",
+      "notes": "Open-ended analysis. Partial abstention on the speculative part is correct."
+    }
+  ]
+}

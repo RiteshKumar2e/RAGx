@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# RAGX backend dependencies
+# Python 3.10+
+# ---------------------------------------------------------------------------
+
+# --- Web framework ---------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- Persistence -----------------------------------------------------------
+SQLAlchemy[asyncio]==2.0.36
+asyncpg==0.30.0          # PostgreSQL async driver
+aiosqlite==0.20.0        # SQLite async driver (local dev fallback)
+alembic==1.14.0
+greenlet==3.1.1
+
+# --- Vector / graph / lexical indexes --------------------------------------
+qdrant-client==1.12.2    # server mode + embedded local mode
+neo4j==5.27.0
+networkx==3.4.2          # local graph store fallback (no Neo4j required)
+rank-bm25==0.2.2
+numpy==1.26.4
+
+# --- Cloud LLM providers (NO local LLMs) -----------------------------------
+google-genai==0.3.0      # Gemini
+groq==0.13.1             # Groq
+
+# --- Document ingestion ----------------------------------------------------
+pymupdf==1.25.1          # PDF text, layout, embedded images
+pdfplumber==0.11.4       # PDF table extraction
+python-docx==1.1.2
+pandas==2.2.3
+Pillow==11.0.0
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# --- Optional OCR (degrades gracefully if the tesseract binary is absent) ---
+pytesseract==0.3.13
+
+# --- Object storage (optional; local filesystem backend needs nothing) -----
+boto3==1.35.81
+
+# --- Infrastructure --------------------------------------------------------
+httpx==0.28.1
+tenacity==9.0.0
+structlog==24.4.0
+python-dotenv==1.0.1
