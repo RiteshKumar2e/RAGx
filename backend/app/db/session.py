@@ -78,6 +78,44 @@ def _resolve_database_url(settings) -> tuple[str, str | None]:
 DEGRADATION_WARNING: str | None = None
 
 
+def _configure_sqlite(engine: AsyncEngine, busy_timeout_ms: int) -> None:
+    """Make a local SQLite file safe for RAGX's concurrency.
+
+    RAGX writes from several places at once: request handlers, background
+    ingestion tasks and evaluation runs. SQLite's defaults (rollback journal, no
+    busy timeout) fail such writes immediately with "database is locked".
+
+    * WAL lets readers proceed while a writer holds the file, which is the usual
+      pattern here (a query reading while ingestion writes).
+    * busy_timeout makes a competing writer *wait* for the lock instead of
+      erroring straight away.
+    * synchronous=NORMAL is the standard, safe pairing with WAL.
+    """
+    from sqlalchemy import event  # noqa: PLC0415
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _record):  # pragma: no cover - driver hook
+        cursor = dbapi_connection.cursor()
+        try:
+            # Applied independently: switching to WAL needs brief exclusive
+            # access, so it can fail when another process already holds the
+            # file. busy_timeout is per-connection and always applies -- and it
+            # is the one that actually prevents instant "database is locked",
+            # so a WAL failure must not stop it being set.
+            for pragma in (
+                f"PRAGMA busy_timeout={busy_timeout_ms}",
+                "PRAGMA journal_mode=WAL",
+                "PRAGMA synchronous=NORMAL",
+                "PRAGMA foreign_keys=ON",
+            ):
+                try:
+                    cursor.execute(pragma)
+                except Exception as exc:
+                    log.warning("db.sqlite_pragma_failed", pragma=pragma, error=str(exc)[:120])
+        finally:
+            cursor.close()
+
+
 def get_engine() -> AsyncEngine:
     global _engine, DEGRADATION_WARNING
     if _engine is None:
@@ -85,12 +123,16 @@ def get_engine() -> AsyncEngine:
         url, DEGRADATION_WARNING = _resolve_database_url(settings)
         kwargs: dict = {"echo": settings.db_echo, "future": True}
 
-        if "aiolibsql" in url:
+        is_turso = "aiolibsql" in url or "libsql" in url
+        if is_turso:
             # Turso is a remote database, so connections are worth reusing and
             # worth checking for staleness — unlike a local SQLite file.
             kwargs.update(pool_pre_ping=True, pool_recycle=300)
 
         _engine = create_async_engine(url, **kwargs)
+
+        if not is_turso and url.startswith("sqlite"):
+            _configure_sqlite(_engine, settings.sqlite_busy_timeout_ms)
         log.info(
             "db.engine_created",
             flavour="turso" if "aiolibsql" in url else "sqlite",

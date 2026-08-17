@@ -24,12 +24,44 @@ from app.core.logging import get_logger
 log = get_logger("ragx.ocr")
 
 
+# Default install locations. The Windows installer does not add Tesseract to
+# PATH, so pytesseract cannot find it even when it is installed -- checking
+# these avoids making the user edit their PATH and restart.
+_TESSERACT_CANDIDATES = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    "/usr/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/opt/homebrew/bin/tesseract",
+)
+
+
+def _locate_tesseract() -> str | None:
+    """Find the tesseract binary on PATH, or at a known install location."""
+    import shutil  # noqa: PLC0415
+
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    from pathlib import Path  # noqa: PLC0415
+
+    for candidate in _TESSERACT_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 @lru_cache(maxsize=1)
 def tesseract_available() -> bool:
     try:
         import pytesseract  # noqa: PLC0415
 
-        pytesseract.get_tesseract_version()
+        binary = _locate_tesseract()
+        if binary:
+            pytesseract.pytesseract.tesseract_cmd = binary
+
+        version = pytesseract.get_tesseract_version()
+        log.info("ocr.tesseract_ready", version=str(version), binary=binary or "PATH")
         return True
     except Exception as exc:
         log.info("ocr.tesseract_unavailable", detail=str(exc)[:160])

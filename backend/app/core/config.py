@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     turso_database_url: str = ""   # e.g. libsql://my-db-org.turso.io
     turso_auth_token: str = ""
     db_echo: bool = False
+    # How long a competing SQLite writer waits for the lock before failing.
+    # RAGX writes concurrently from request handlers, background ingestion and
+    # evaluation runs; without this they fail instantly with "database is locked".
+    sqlite_busy_timeout_ms: int = 15000
 
     # -- Object storage -----------------------------------------------------
     storage_backend: Literal["local", "s3"] = "local"
@@ -237,6 +241,7 @@ class Settings(BaseSettings):
         params = ["secure=true"]
         if self.turso_auth_token:
             params.append(f"authToken={quote_plus(self.turso_auth_token)}")
+
         return f"sqlite+aiolibsql://{host}?{'&'.join(params)}"
 
     @property
