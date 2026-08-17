@@ -1,6 +1,6 @@
 """Document, chunk and entity ORM models.
 
-Large binaries never land in PostgreSQL -- ``Document.object_key`` points at the
+Large binaries never land in the database -- ``Document.object_key`` points at the
 object-storage backend. Only metadata, extracted text and provenance live here.
 """
 

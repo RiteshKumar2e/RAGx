@@ -2,8 +2,11 @@
 # Optional infrastructure for RAGX.
 #
 # RAGX runs with NO infrastructure at all: Qdrant has an embedded mode, the
-# graph falls back to an in-process NetworkX store, and PostgreSQL falls back to
-# SQLite. This compose file is for when you want the production backends.
+# graph falls back to an in-process NetworkX store, and the relational layer
+# uses a local SQLite file. This compose file is for the production backends.
+#
+# The database is NOT here — it is Turso (hosted libSQL); configure it with
+# TURSO_DATABASE_URL / TURSO_AUTH_TOKEN.
 #
 #   docker compose up -d
 #
@@ -11,7 +14,6 @@
 #   QDRANT_URL=http://localhost:6333
 #   NEO4J_URI=bolt://localhost:7687
 #   NEO4J_PASSWORD=ragx_dev_password
-#   DATABASE_URL=postgresql+asyncpg://ragx:ragx_dev_password@localhost:5432/ragx
 #   STORAGE_BACKEND=s3
 #   S3_ENDPOINT_URL=http://localhost:9000
 #   S3_BUCKET=ragx
@@ -59,23 +61,9 @@ services:
       retries: 10
       start_period: 40s
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: ragx-postgres
-    restart: unless-stopped
-    ports:
-      - '5432:5432'
-    environment:
-      POSTGRES_USER: ragx
-      POSTGRES_PASSWORD: ragx_dev_password
-      POSTGRES_DB: ragx
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ragx -d ragx']
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # No database service here: the relational layer is SQLite-compatible — a
+  # local file in development, Turso (hosted libSQL) in production. Set
+  # TURSO_DATABASE_URL / TURSO_AUTH_TOKEN in backend/.env to use Turso.
 
   # S3-compatible object storage for original files and extracted figures.
   minio:
@@ -115,5 +103,4 @@ volumes:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
-  postgres_data:
   minio_data:

@@ -35,7 +35,7 @@ _SENSITIVE_KEYS = {
     "groq_api_key",
     "authorization",
     "password",
-    "postgres_password",
+    "turso_auth_token",
     "neo4j_password",
     "secret",
     "token",

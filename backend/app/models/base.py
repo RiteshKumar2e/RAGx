@@ -26,8 +26,8 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
-# ``JSON`` is portable across PostgreSQL and SQLite; on PostgreSQL SQLAlchemy
-# maps it to JSONB-compatible storage via the psycopg/asyncpg JSON codec.
+# ``JSON`` maps onto SQLite's JSON1 support, which Turso/libSQL also provides,
+# so the same column type works locally and in production.
 JSONType = JSON
 
 

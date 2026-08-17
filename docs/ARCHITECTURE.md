@@ -42,7 +42,7 @@ time.
 
 **3. Degradation is explicit and honest.** Missing infrastructure or missing API
 keys never produce a silent wrong answer. Qdrant falls back to embedded mode,
-Neo4j to NetworkX, PostgreSQL to SQLite, Gemini embeddings to a labelled
+Neo4j to NetworkX, Turso to a local SQLite file, Gemini embeddings to a labelled
 development embedder. Each fallback is a real implementation of the same
 interface, and each one that changes result quality raises a visible warning.
 
@@ -189,7 +189,7 @@ the graph.
 |---|---|---|---|
 | Vector | Qdrant server | Qdrant **embedded** (same client, local path) | dense embeddings + citation payload |
 | Graph | Neo4j (Cypher) | NetworkX (in-process, JSON-persisted) | entities, typed relations |
-| Relational | PostgreSQL | SQLite | documents, chunks, queries, evaluations |
+| Relational | Turso (hosted libSQL) | local SQLite file | documents, chunks, queries, evaluations |
 | Objects | S3 / MinIO | local filesystem | original files, extracted figures |
 
 **Why payloads live in Qdrant.** Each vector carries `document_id`, page,
@@ -204,7 +204,7 @@ typed edges, bounded-depth BFS with confidence decay per hop, shortest paths
 between entities — in-process. Both return `GraphPath` objects carrying the
 chunk each edge was extracted from, so a graph hit is ordinary citable evidence.
 
-**Why large files never touch PostgreSQL.** `Document.object_key` points at
+**Why large files never touch the database.** `Document.object_key` points at
 object storage. SQL holds metadata and extracted text only.
 
 ---

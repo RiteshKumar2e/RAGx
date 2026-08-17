@@ -31,7 +31,7 @@ def test_health_reports_components(client) -> None:
 SENTINELS = {
     "gemini_api_key": "SENTINEL-GEMINI-b3f9c2",
     "groq_api_key": "SENTINEL-GROQ-7d1a84",
-    "postgres_password": "SENTINEL-PGPASS-55ab0e",
+    "turso_auth_token": "SENTINEL-TURSO-55ab0e",
     "neo4j_password": "SENTINEL-NEO4J-90cc31",
     "qdrant_api_key": "SENTINEL-QDRANT-1fe207",
     "ragx_api_key": "SENTINEL-RAGX-6b4d19",

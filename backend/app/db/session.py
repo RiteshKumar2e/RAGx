@@ -1,8 +1,9 @@
 """Async SQLAlchemy engine/session management.
 
-PostgreSQL is the production target. When no PostgreSQL DSN is configured the
-same ORM models run against a local SQLite file so the project is usable with
-zero infrastructure -- the schema and queries are identical either way.
+The relational layer is SQLite-compatible end to end: a local file in
+development, Turso (hosted libSQL) in production. Because both speak SQLite,
+the schema and queries are identical in either environment -- there is no
+dialect drift between what you test against and what you deploy on.
 """
 
 from __future__ import annotations
@@ -21,16 +22,48 @@ _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _require_libsql_driver() -> None:
+    """Fail with an actionable message when the Turso driver is absent.
+
+    ``sqlalchemy-libsql < 0.2`` ships only a *sync* dialect, and the async one
+    depends on ``libsql-experimental``, which builds from Rust source on
+    platforms without a prebuilt wheel. Without this check SQLAlchemy raises a
+    bare ``NoSuchModuleError`` that says nothing about how to fix it.
+    """
+    try:
+        import sqlalchemy_libsql.aiolibsql  # noqa: F401, PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "Turso is configured (TURSO_DATABASE_URL) but the async libSQL driver "
+            "is unavailable.\n"
+            "  Install it with:  pip install \"sqlalchemy-libsql>=0.2\"\n"
+            "  That pulls in libsql-experimental, which compiles from Rust source "
+            "when no wheel exists for your platform — it needs the Rust toolchain "
+            "and cmake (`pip install cmake`).\n"
+            "  If it will not build, unset TURSO_DATABASE_URL to fall back to a "
+            "local SQLite file."
+        ) from exc
+
+
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
         url = settings.sqlalchemy_url
         kwargs: dict = {"echo": settings.db_echo, "future": True}
-        if url.startswith("postgresql"):
-            kwargs.update(pool_size=10, max_overflow=20, pool_pre_ping=True, pool_recycle=1800)
+
+        if settings.uses_turso:
+            _require_libsql_driver()
+            # Turso is a remote HTTP database, so connections are worth reusing
+            # and worth checking for staleness — unlike a local SQLite file.
+            kwargs.update(pool_pre_ping=True, pool_recycle=300)
+
         _engine = create_async_engine(url, **kwargs)
-        log.info("db.engine_created", dialect=url.split("://", 1)[0])
+        log.info(
+            "db.engine_created",
+            flavour=settings.database_flavour,
+            dialect=url.split("://", 1)[0],
+        )
     return _engine
 
 

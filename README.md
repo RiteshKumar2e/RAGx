@@ -14,6 +14,7 @@
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-vector-DC244C)](https://qdrant.tech/)
 [![Neo4j](https://img.shields.io/badge/Neo4j-graph-008CC1?logo=neo4j&logoColor=white)](https://neo4j.com/)
+[![Turso](https://img.shields.io/badge/Turso-libSQL-4FF8D2?logo=turso&logoColor=black)](https://turso.tech/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -150,14 +151,14 @@ accounting, and a per-claim verdict table.
 └──────────┬──────────────┬──────────────┬──────────────┬──────────────────┘
            ▼              ▼              ▼              ▼
       ┌─────────┐   ┌──────────┐   ┌───────────┐  ┌──────────────┐
-      │ Qdrant  │   │  Neo4j   │   │PostgreSQL │  │Object storage│
+      │ Qdrant  │   │  Neo4j   │   │Turso/SQLite│ │Object storage│
       │ vectors │   │  graph   │   │ metadata  │  │ files/figures│
       └─────────┘   └──────────┘   └───────────┘  └──────────────┘
 ```
 
 **Storage separation.** Four layers, each doing what it is good at. Original
 files and extracted figures live in object storage — never as blobs in
-PostgreSQL. Every layer has a working fallback so the project runs with zero
+the database. Every layer has a working fallback so the project runs with zero
 infrastructure (see [Installation](#9-installation)).
 
 **Modular retrieval.** Every strategy implements one interface:
@@ -338,7 +339,7 @@ through FastAPI.
 ## 8. Tech stack
 
 **Backend** — Python 3.10+ · FastAPI · Pydantic v2 · SQLAlchemy 2 (async) ·
-Qdrant · Neo4j · PostgreSQL · rank-bm25 · NetworkX · PyMuPDF · pdfplumber ·
+Qdrant · Neo4j · Turso/libSQL · rank-bm25 · NetworkX · PyMuPDF · pdfplumber ·
 python-docx · pandas · Pillow · Tesseract (optional) · structlog
 
 **Frontend** — React 18 · Vite 6 · React Router 6 · Tailwind CSS 3 · Axios ·
@@ -354,13 +355,14 @@ Recharts · React Flow · Lucide · react-markdown
 
 - Python 3.10+
 - Node.js 18+
-- *(optional)* Docker, for Qdrant / Neo4j / PostgreSQL / MinIO
+- *(optional)* Docker, for Qdrant / Neo4j / MinIO
+- *(optional)* A [Turso](https://turso.tech) database for hosted storage
 
 ### Zero-infrastructure quick start
 
 RAGX runs with **no databases installed**. Qdrant has an embedded mode, the
-graph falls back to an in-process NetworkX store, PostgreSQL falls back to
-SQLite, and object storage falls back to the local filesystem. Every fallback is
+graph falls back to an in-process NetworkX store, the database is a local
+SQLite file, and object storage falls back to the local filesystem. Every fallback is
 a real implementation of the same interface — not a stub.
 
 ```bash
@@ -428,7 +430,7 @@ request and CORS never enters the picture.
 ### With production backends
 
 ```bash
-docker compose up -d          # Qdrant + Neo4j + PostgreSQL + MinIO
+docker compose up -d          # Qdrant + Neo4j + MinIO
 ```
 
 Then set in `backend/.env`:
@@ -437,7 +439,6 @@ Then set in `backend/.env`:
 QDRANT_URL=http://localhost:6333
 NEO4J_URI=bolt://localhost:7687
 NEO4J_PASSWORD=ragx_dev_password
-DATABASE_URL=postgresql+asyncpg://ragx:ragx_dev_password@localhost:5432/ragx
 STORAGE_BACKEND=s3
 S3_ENDPOINT_URL=http://localhost:9000
 S3_BUCKET=ragx
@@ -462,7 +463,8 @@ The ones that matter most:
 | `EMBEDDING_PROVIDER` | `gemini` (production) or `hashing` (offline dev) | `gemini` |
 | `QDRANT_URL` | Empty ⇒ embedded Qdrant | *(empty)* |
 | `NEO4J_URI` | Empty ⇒ embedded NetworkX graph | *(empty)* |
-| `DATABASE_URL` | Empty ⇒ local SQLite | *(empty)* |
+| `DATABASE_URL` | Explicit override; empty ⇒ Turso, else local SQLite | *(empty)* |
+| `TURSO_DATABASE_URL` | Hosted libSQL (see below) | *(empty)* |
 | `RAGX_API_KEY` | Gate on mutating endpoints | *(empty)* |
 | `CORRECTIVE_RELEVANCE_FLOOR` | Below this, retrieval is repaired | `0.45` |
 | `INSUFFICIENT_EVIDENCE_THRESHOLD` | Below this, the answer is withheld | `0.35` |
@@ -472,10 +474,103 @@ The ones that matter most:
 > query analysis, entity extraction and verification do not — and the UI says so
 > in a banner rather than failing silently.
 
+### Database options
+
+The relational layer is **SQLite-compatible end to end** — a local file in
+development, Turso (hosted libSQL) in production. Same schema, same queries, no
+dialect drift between what you test against and what you deploy on.
+
+It resolves in this order:
+
+| Priority | Setting | Backend |
+|---|---|---|
+| 1 | `DATABASE_URL` | Explicit override (a `libsql://` or `sqlite:///` DSN) |
+| 2 | `TURSO_DATABASE_URL` | Turso / libSQL — hosted SQLite |
+| 3 | *(none)* | Local SQLite file — the zero-infrastructure default |
+
+<details>
+<summary><strong>Using Turso (hosted libSQL)</strong></summary>
+
+Turso keeps SQLite semantics but runs hosted and replicated.
+
+```bash
+turso db create ragx
+turso db show ragx --url         # -> TURSO_DATABASE_URL
+turso db tokens create ragx      # -> TURSO_AUTH_TOKEN
+```
+
+```bash
+# backend/.env
+TURSO_DATABASE_URL=libsql://ragx-<org>.turso.io
+TURSO_AUTH_TOKEN=<token>
+```
+
+The driver (`sqlalchemy-libsql`) ships in `requirements.txt`, so nothing extra
+is needed. RAGX connects over the `sqlite+aiolibsql://` dialect, with connection
+pre-ping and recycling enabled (Turso is remote, unlike a local SQLite file).
+
+> **Windows note.** `libsql-experimental` publishes prebuilt wheels for
+> **Linux x86_64 and macOS only**. On Windows pip compiles it from Rust source,
+> which needs the [Rust toolchain](https://rustup.rs) plus `pip install cmake`.
+> If that install step fails on your machine, drop the `sqlalchemy-libsql` line
+> from `requirements.txt` — RAGX runs on local SQLite without it, and only needs
+> it when `TURSO_DATABASE_URL` is set.
+>
+> When the driver is missing but Turso *is* configured, RAGX fails at startup
+> with an explicit message. It never silently falls back to another database.
+
+</details>
+
+### Troubleshooting
+
+<details>
+<summary><strong>Frontend shows 500/502 on <code>/api/v1/*</code></strong></summary>
+
+The Vite dev server proxies `/api` to `VITE_BACKEND_ORIGIN`:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `502 backend_unreachable` | Backend not running, or on another port | Start it, or point `VITE_BACKEND_ORIGIN` at the right port |
+| Responses look like a different app | Another service owns that port | Run RAGX elsewhere and update `VITE_BACKEND_ORIGIN` |
+| `ECONNREFUSED` though the backend runs | Node 18+ resolves `localhost` to IPv6 `::1`; uvicorn binds IPv4 | Handled automatically — the proxy rewrites `localhost` → `127.0.0.1` |
+
+The dev server prints an explicit diagnosis to the terminal in each case.
+
+</details>
+
+<details>
+<summary><strong><code>Storage folder … is already accessed by another instance</code></strong></summary>
+
+Embedded Qdrant takes an **exclusive lock**, so only one RAGX backend can run at
+a time in embedded mode. Stop the other instance, or run a Qdrant server:
+
+```bash
+docker compose up -d qdrant     # then set QDRANT_URL=http://localhost:6333
+```
+
+</details>
+
+<details>
+<summary><strong>Documents indexed but retrieval returns nothing</strong></summary>
+
+The relational store and vector store have drifted apart — usually because
+`backend/data/` was partially deleted. Check `GET /api/v1/documents/stats`: if
+`total_chunks` is non-zero while `vectors_indexed` is `0`, that is the symptom.
+
+Reindex (`POST /api/v1/documents/{id}/reindex`), or reset the dev store (it is
+gitignored and regenerable):
+
+```bash
+# stop the backend first — it holds the Qdrant lock
+rm -rf backend/data
+```
+
+</details>
+
 ### Tests
 
 ```bash
-cd backend && pytest              # 90 tests
+cd backend && pytest              # 103 tests
 cd frontend && npm run lint && npm run build
 ```
 
@@ -604,7 +699,7 @@ Methodology in full: **[docs/EVALUATION.md](docs/EVALUATION.md)**
 >
 > **To produce results:** index your corpus → *Evaluation* → **Run experiment** →
 > select `naive`, `hybrid`, `adaptive`, `ragx` → enable LLM judges. Results are
-> written to PostgreSQL and rendered as comparison charts and tables.
+> written to the database and rendered as comparison charts and tables.
 
 ### What *is* verified in this repository
 

@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         embedding_provider=embedder.name,
         embedding_production_ready=embedder.production_ready,
         graph_backend=get_graph_store().backend,
-        database="postgresql" if settings.uses_postgres else "sqlite",
+        database=settings.database_flavour,
     )
     if not gateway.any_configured:
         log.warning(

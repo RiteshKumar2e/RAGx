@@ -33,14 +33,21 @@ VERSION = "1.0.0"
 
 async def _database_health() -> dict[str, Any]:
     settings = get_settings()
-    dialect = "postgresql" if settings.uses_postgres else "sqlite"
+    flavour = settings.database_flavour
     try:
         engine = get_engine()
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        return {"engine": dialect, "healthy": True, "status_text": "healthy"}
+        return {"engine": flavour, "healthy": True, "status_text": "healthy"}
     except Exception as exc:
-        return {"engine": dialect, "healthy": False, "status_text": "unhealthy", "error": str(exc)[:200]}
+        # The Turso driver message is long and actionable; keep more of it.
+        limit = 600 if flavour == "turso" else 200
+        return {
+            "engine": flavour,
+            "healthy": False,
+            "status_text": "unhealthy",
+            "error": str(exc)[:limit],
+        }
 
 
 class HealthService:
@@ -111,10 +118,11 @@ class HealthService:
                 "semantically, so retrieval quality and any benchmark numbers are not representative. "
                 "Set EMBEDDING_PROVIDER=gemini with a GEMINI_API_KEY for real embeddings."
             )
-        if not settings.uses_postgres:
+        if settings.database_flavour == "sqlite":
             warnings.append(
-                "Running on SQLite. This is fine for local development; configure DATABASE_URL "
-                "for PostgreSQL in production."
+                "Running on a local SQLite file. This is fine for development; set "
+                "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a hosted libSQL database "
+                "in production."
             )
         if not settings.neo4j_uri:
             warnings.append(

@@ -89,14 +89,13 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
     graph_fallback_path: str = str(BACKEND_ROOT / "data" / "graph" / "graph.json")
 
-    # -- Relational database ------------------------------------------------
-    # PostgreSQL in production; SQLite is the zero-infrastructure dev default.
-    database_url: str = ""
-    postgres_host: str = ""
-    postgres_port: int = 5432
-    postgres_user: str = "ragx"
-    postgres_password: str = ""
-    postgres_db: str = "ragx"
+    # -- Relational database (Turso / libSQL, SQLite locally) ---------------
+    # Turso is the hosted target; a local SQLite file is the zero-infrastructure
+    # default. Both speak SQLite, so the ORM models and queries are identical
+    # and there is no dialect drift between development and production.
+    database_url: str = ""         # explicit override; wins over everything
+    turso_database_url: str = ""   # e.g. libsql://my-db-org.turso.io
+    turso_auth_token: str = ""
     db_echo: bool = False
 
     # -- Object storage -----------------------------------------------------
@@ -182,36 +181,66 @@ class Settings(BaseSettings):
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
 
+    def _turso_url(self) -> str:
+        """Build the async libSQL URL for a Turso database.
+
+        Turso speaks SQLite over HTTP. The ``aiolibsql`` dialect shipped by
+        ``sqlalchemy-libsql`` maps that onto SQLAlchemy's async engine, so the
+        ORM models and queries are unchanged from the SQLite path.
+        """
+        from urllib.parse import quote_plus, urlsplit  # noqa: PLC0415
+
+        raw = self.turso_database_url.strip()
+        # Accept libsql://, https:// or a bare hostname.
+        host = urlsplit(raw).netloc if "://" in raw else raw
+        host = host.rstrip("/")
+
+        params = ["secure=true"]
+        if self.turso_auth_token:
+            params.append(f"authToken={quote_plus(self.turso_auth_token)}")
+        return f"sqlite+aiolibsql://{host}?{'&'.join(params)}"
+
     @property
     def sqlalchemy_url(self) -> str:
         """Resolve the async SQLAlchemy URL.
 
-        Precedence: explicit ``DATABASE_URL`` -> assembled PostgreSQL DSN ->
-        local SQLite file. The SQLite path keeps the project runnable with no
-        infrastructure while remaining a real, migrated relational store.
+        Precedence:
+        1. explicit ``DATABASE_URL``
+        2. Turso / libSQL  (``TURSO_DATABASE_URL``)
+        3. local SQLite file
+
+        Every option is SQLite-compatible, so the schema behaves identically in
+        development and production.
         """
         if self.database_url:
             url = self.database_url
-            # Accept the common sync-style DSNs and upgrade them to async.
-            if url.startswith("postgresql://"):
-                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-            elif url.startswith("postgres://"):
-                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif url.startswith("sqlite://") and "+aiosqlite" not in url:
+            if url.startswith("libsql://"):
+                # A Turso DSN pasted straight into DATABASE_URL.
+                return self.model_copy(
+                    update={"turso_database_url": url, "database_url": ""}
+                )._turso_url()
+            if url.startswith("sqlite://") and not any(
+                driver in url for driver in ("+aiosqlite", "+aiolibsql", "+libsql")
+            ):
+                # Upgrade a sync-style DSN to the async driver.
                 url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
             return url
-        if self.postgres_host:
-            return (
-                f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-            )
+
+        if self.turso_database_url:
+            return self._turso_url()
+
         db_file = BACKEND_ROOT / "data" / "ragx.db"
         db_file.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite+aiosqlite:///{db_file.as_posix()}"
 
     @property
-    def uses_postgres(self) -> bool:
-        return self.sqlalchemy_url.startswith("postgresql")
+    def uses_turso(self) -> bool:
+        return "aiolibsql" in self.sqlalchemy_url
+
+    @property
+    def database_flavour(self) -> str:
+        """Short label for health reporting."""
+        return "turso" if self.uses_turso else "sqlite"
 
     def ensure_directories(self) -> None:
         for path in (
@@ -249,7 +278,7 @@ class Settings(BaseSettings):
                 "vector_store": "qdrant",
                 "vector_mode": "server" if self.qdrant_url else "embedded",
                 "graph_store": "neo4j" if self.neo4j_uri else "networkx-embedded",
-                "relational": "postgresql" if self.uses_postgres else "sqlite",
+                "relational": self.database_flavour,
                 "objects": self.storage_backend,
             },
             "retrieval": {

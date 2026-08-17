@@ -5,8 +5,8 @@ BM25 is strong -- acronyms, model names, dataset identifiers, version strings --
 so both are run and fused.
 
 The index is held in memory and persisted to disk as a token list so a restart
-does not require re-tokenising the corpus. It is rebuilt from PostgreSQL on
-demand if the snapshot is missing.
+does not require re-tokenising the corpus. It is rebuilt from the relational
+store on demand if the snapshot is missing.
 """
 
 from __future__ import annotations

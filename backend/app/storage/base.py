@@ -1,7 +1,7 @@
 """Object-storage interface.
 
 Original uploads and derived artefacts (figure crops, table renders) are stored
-here, never in PostgreSQL. Two backends implement the same contract: a local
+here, never in the database. Two backends implement the same contract: a local
 filesystem store and an S3-compatible store (AWS S3, MinIO, R2, ...).
 """
 
