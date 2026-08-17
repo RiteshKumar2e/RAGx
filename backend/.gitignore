@@ -1,0 +1,22 @@
+# Backend-specific ignores (the repository root .gitignore also applies).
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime state: embedded Qdrant, NetworkX graph, BM25 snapshot, object store,
+# SQLite database. All of it is regenerable by re-ingesting documents.
+data/
+
+# Environment — only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
