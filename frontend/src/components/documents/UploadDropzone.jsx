@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FileUp, Link2, Loader2, Upload, X } from 'lucide-react';
 import { Button } from '../common';
 import { useSystem } from '../../context/SystemContext';
@@ -21,9 +21,14 @@ export default function UploadDropzone({ onUpload, onIngestUrl, uploading, progr
   const [url, setUrl] = useState('');
   const inputRef = useRef(null);
 
-  const allowed = settings?.ingestion?.allowed_extensions || [
-    '.pdf', '.docx', '.txt', '.md', '.csv', '.png', '.jpg', '.jpeg',
-  ];
+  // Memoised so the identity is stable — `validate` depends on it.
+  const allowed = useMemo(
+    () =>
+      settings?.ingestion?.allowed_extensions || [
+        '.pdf', '.docx', '.txt', '.md', '.csv', '.png', '.jpg', '.jpeg',
+      ],
+    [settings?.ingestion?.allowed_extensions],
+  );
   const maxMb = settings?.ingestion?.max_upload_mb || 50;
 
   const validate = useCallback(
@@ -85,7 +90,6 @@ export default function UploadDropzone({ onUpload, onIngestUrl, uploading, progr
 
   return (
     <div>
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         onDragOver={(event) => {
           event.preventDefault();

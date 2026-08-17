@@ -298,8 +298,8 @@ export default function Evaluation() {
         {usingDevEmbedder ? (
           <InfoBanner variant="warning" icon={AlertTriangle} title="Development embedder active">
             Retrieval currently matches text lexically, not semantically. Results measured now are
-            not representative of the system's real retrieval quality and must not be reported as
-            benchmarks.
+            not representative of the system&apos;s real retrieval quality and must not be reported
+            as benchmarks.
           </InfoBanner>
         ) : null}
 

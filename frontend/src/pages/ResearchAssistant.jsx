@@ -25,7 +25,7 @@ let messageCounter = 0;
 const nextId = () => `m${++messageCounter}`;
 
 export default function ResearchAssistant() {
-  const { hasLlm, usingDevEmbedder } = useSystem();
+  const { usingDevEmbedder } = useSystem();
   const toast = useToast();
 
   const [messages, setMessages] = useState([]);

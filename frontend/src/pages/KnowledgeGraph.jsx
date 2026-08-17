@@ -50,8 +50,8 @@ export default function KnowledgeGraph() {
   );
   const { data: stats } = useApi(() => graphService.stats(), []);
 
-  const nodes = graph?.nodes || [];
-  const edges = graph?.edges || [];
+  const nodes = useMemo(() => graph?.nodes || [], [graph]);
+  const edges = useMemo(() => graph?.edges || [], [graph]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedId) || null,

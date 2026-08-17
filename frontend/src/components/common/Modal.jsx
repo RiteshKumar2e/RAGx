@@ -70,7 +70,6 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   if (!open) return null;
 
   return createPortal(
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-ink-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onKeyDown={handleKeyDown}

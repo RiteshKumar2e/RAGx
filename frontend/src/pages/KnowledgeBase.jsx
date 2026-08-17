@@ -173,7 +173,7 @@ export default function KnowledgeBase() {
 
   const { data: stats, refetch: refetchStats } = useApi(() => documentService.stats(), []);
 
-  const documents = list?.items || [];
+  const documents = useMemo(() => list?.items || [], [list]);
 
   // Poll while anything is still being processed, so the checklist advances live.
   const hasActive = useMemo(
