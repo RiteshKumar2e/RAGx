@@ -8,6 +8,13 @@ module.exports = {
     'plugin:react-hooks/recommended',
   ],
   ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs'],
+  overrides: [
+    {
+      // Build config runs in Node, not the browser, so `process` is defined.
+      files: ['vite.config.js', 'tailwind.config.js', 'postcss.config.js'],
+      env: { node: true, browser: false },
+    },
+  ],
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   settings: { react: { version: 'detect' } },
   plugins: ['react-refresh'],

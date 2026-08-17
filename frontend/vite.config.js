@@ -41,7 +41,6 @@ export default defineConfig(({ mode }) => {
                 `${new URL(backend).port || 8000}\n` +
                 `If another service already uses that port, pick a free one and set ` +
                 `VITE_BACKEND_ORIGIN in frontend/.env to match.`;
-              // eslint-disable-next-line no-console
               console.error(`\n${message}\n`);
               if (res && !res.headersSent && res.writeHead) {
                 res.writeHead(502, { 'Content-Type': 'application/json' });
@@ -57,7 +56,6 @@ export default defineConfig(({ mode }) => {
             // on the same port) is the other silent-failure mode.
             proxy.on('proxyRes', (proxyRes, req) => {
               if (proxyRes.statusCode === 404 && req.url?.startsWith('/api/v1/')) {
-                // eslint-disable-next-line no-console
                 console.warn(
                   `[RAGX] ${backend}${req.url} returned 404. Is a different ` +
                     `service running on that port?`,

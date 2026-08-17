@@ -16,7 +16,6 @@ export function StrategyChip({ name, size = 'sm', showCheck = true }) {
       style={{
         backgroundColor: `${meta.color}12`,
         color: meta.color,
-        // eslint-disable-next-line no-underscore-dangle
         '--tw-ring-color': `${meta.color}33`,
       }}
       title={meta.description}
