@@ -67,6 +67,47 @@ def test_misconfigured_neo4j_falls_back_to_embedded_store(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
+async def test_unreachable_neo4j_degrades_instead_of_raising(monkeypatch, tmp_path) -> None:
+    """A valid URI with bad credentials must not 500 every graph endpoint.
+
+    Before this, a configured-but-unreachable Neo4j made `/graph`, `/graph/stats`
+    and Graph RAG raise on every call.
+    """
+    import app.indexing.graph_store as module
+    from app.core.config import get_settings
+
+    class Unreachable(module.Neo4jGraphStore):
+        def __init__(self) -> None:  # no driver construction
+            self._driver = None
+
+        async def ensure_ready(self):
+            raise RuntimeError("authentication failure")
+
+        async def close(self):
+            return None
+
+    settings = get_settings()
+    original_uri = settings.neo4j_uri
+    settings.neo4j_uri = "neo4j+s://example.databases.neo4j.io"
+    monkeypatch.setattr(module, "_store", Unreachable())
+    # The embedded store writes to the suite's temporary graph path already,
+    # so the real class is used here -- patching it would break the isinstance
+    # guard that stops an infinite fallback loop.
+
+    try:
+        info = await module.ensure_graph_store_ready()
+        assert info["degraded"] is True
+        assert info["backend"] == "networkx"
+        assert "unreachable" in info["detail"].lower()
+        # And the store now actually works.
+        stats = await module.get_graph_store().stats()
+        assert "entities" in stats
+    finally:
+        settings.neo4j_uri = original_uri
+        module._store = None
+
+
+@pytest.mark.anyio
 async def test_fallback_health_explains_why(monkeypatch, tmp_path) -> None:
     store = NetworkXGraphStore(path=tmp_path / "graph.json")
     store.config_warning = "NEO4J_URI is set to 'b7f9149b', which looks like a Neo4j Aura instance ID"

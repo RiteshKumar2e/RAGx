@@ -16,9 +16,9 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger, request_id_var
 from app.db.init_db import init_db
-from app.db.session import dispose_engine
+from app.db.session import active_database_flavour, dispose_engine
 from app.indexing.bm25_index import get_bm25_index
-from app.indexing.graph_store import close_graph_store, get_graph_store
+from app.indexing.graph_store import close_graph_store, ensure_graph_store_ready, get_graph_store
 from app.indexing.vector_store import close_vector_store, get_vector_store
 from app.llm.embeddings import get_embedding_provider
 from app.llm.gateway import get_gateway
@@ -74,9 +74,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.error("app.vector_store_unavailable", error=str(exc)[:200])
     try:
         await get_bm25_index().ensure_loaded()
-        await get_graph_store().ensure_ready()
     except Exception as exc:
-        log.warning("app.index_warmup_partial", error=str(exc)[:200])
+        log.warning("app.bm25_warmup_failed", error=str(exc)[:200])
+    try:
+        # Connects Neo4j when configured, and falls back to the embedded store
+        # (loudly) if it cannot be reached.
+        await ensure_graph_store_ready()
+    except Exception as exc:
+        log.warning("app.graph_warmup_failed", error=str(exc)[:200])
 
     gateway = get_gateway()
     embedder = get_embedding_provider()
@@ -86,7 +91,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         embedding_provider=embedder.name,
         embedding_production_ready=embedder.production_ready,
         graph_backend=get_graph_store().backend,
-        database=settings.database_flavour,
+        # What the engine actually connected to, not what was requested --
+        # these differ when a configured backend degraded at startup.
+        database=active_database_flavour(),
     )
     if not gateway.any_configured:
         log.warning(

@@ -864,6 +864,41 @@ def get_graph_store() -> GraphStore:
     return _store
 
 
+async def ensure_graph_store_ready() -> dict[str, Any]:
+    """Connect the graph store, degrading to the embedded one if Neo4j fails.
+
+    A configured-but-unreachable Neo4j (wrong password, paused Aura instance,
+    network block) otherwise makes every graph call raise, so Graph RAG returns
+    500s and relationship queries break. Since the embedded store implements the
+    same traversal semantics, falling back keeps the feature working -- loudly,
+    and reported by /health.
+
+    Called once from the application lifespan.
+    """
+    global _store
+    store = get_graph_store()
+    try:
+        await store.ensure_ready()
+        return {"backend": store.backend, "degraded": False}
+    except Exception as exc:
+        if isinstance(store, NetworkXGraphStore):
+            raise
+        problem = (
+            f"Neo4j is configured but unreachable ({type(exc).__name__}: {str(exc)[:160]}). "
+            f"Check NEO4J_URI, NEO4J_USER and NEO4J_PASSWORD. Graph RAG is running on the "
+            f"embedded NetworkX store until this is fixed."
+        )
+        log.warning("graph.neo4j_unreachable_using_embedded_store", detail=problem)
+        try:
+            await store.close()
+        except Exception:  # pragma: no cover
+            pass
+        _store = NetworkXGraphStore()
+        _store.config_warning = problem
+        await _store.ensure_ready()
+        return {"backend": "networkx", "degraded": True, "detail": problem}
+
+
 async def close_graph_store() -> None:
     global _store
     if _store is not None:

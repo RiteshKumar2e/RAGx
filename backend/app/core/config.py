@@ -61,8 +61,11 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     groq_fast_model: str = "openai/gpt-oss-20b"
 
-    primary_llm_provider: Literal["gemini", "groq"] = "gemini"
-    fallback_llm_provider: Literal["gemini", "groq", "none"] = "groq"
+    # Groq leads on latency; Gemini backs it up. Note that multimodal work is
+    # always routed to Gemini regardless of this setting -- Groq's chat models
+    # cannot accept images -- and embeddings come from Gemini independently.
+    primary_llm_provider: Literal["gemini", "groq"] = "groq"
+    fallback_llm_provider: Literal["gemini", "groq", "none"] = "gemini"
     llm_timeout_seconds: float = 90.0
     llm_max_retries: int = 2
 
