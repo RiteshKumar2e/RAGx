@@ -373,16 +373,41 @@ git clone <your-repo-url> RAGx && cd RAGx
 cd backend
 cp .env.example .env                     # then add GEMINI_API_KEY / GROQ_API_KEY
 
-python -m venv .venv                     # or: python -m virtualenv .venv
-source .venv/Scripts/activate            # Windows: .venv\Scripts\activate
-                                         # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-> Run the backend from the `backend/` directory — the default data paths in
-> `.env` are relative to it. The config also reads a `.env` at the repository
-> root if you prefer to keep one there instead.
+> **Data paths are anchored to `backend/`**, so the server behaves identically
+> whether you start it from there or from the repository root. `.env` is read
+> from `backend/.env` first, then the repository root.
+
+<details>
+<summary><strong>Installing into a shared Python?</strong> (dependency notes)</summary>
+
+`requirements.txt` uses minimum versions (`>=`) rather than exact pins, so
+installing RAGX will not downgrade packages another project depends on. It has
+been verified against current releases — including `qdrant-client 1.19`,
+`google-genai 2.18` and `neo4j 6.2`.
+
+If the same interpreter also hosts **gradio, streamlit or openai < 1.10**, note
+that RAGX's Gemini and PDF dependencies require newer `pydantic`, `pillow` and
+`anyio` than those packages allow:
+
+| Package | Needs | Conflicts with |
+|---|---|---|
+| `google-genai` | `pydantic >= 2.12.5`, `anyio >= 4.8` | `gradio` (`pydantic < 2.12`), `openai < 1.10` (`anyio < 4`) |
+| `pdfplumber` | `pillow >= 12.2` | `gradio`, `streamlit` (`pillow < 12`) |
+
+These constraints are mutually unsatisfiable — no single version set works for
+both. Use a virtual environment for RAGX if you need those packages to keep
+working in the same interpreter:
+
+```bash
+python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements.txt
+```
+
+</details>
 
 → API at <http://localhost:8000> · interactive docs at <http://localhost:8000/docs>
 

@@ -92,6 +92,17 @@ aggressively. Addressing this would require a higher-resolution feature branch.
 
 
 @pytest.fixture(scope="module")
+def sample_paper() -> bytes:
+    """The sample corpus, provided as a fixture.
+
+    Deliberately not imported across test modules: an unrelated ``tests``
+    package in site-packages can shadow this one when running outside a
+    virtual environment, and a fixture sidesteps module resolution entirely.
+    """
+    return SAMPLE_PAPER
+
+
+@pytest.fixture(scope="module")
 def indexed_document(client):
     """Upload and fully process one document; yields its id."""
     import io

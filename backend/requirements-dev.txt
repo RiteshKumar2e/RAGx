@@ -1,6 +1,7 @@
 -r requirements.txt
 
-pytest==8.3.4
-pytest-asyncio==0.25.0
-anyio==4.7.0
-ruff==0.8.4
+# Test and lint tooling. Same minimum-version policy as requirements.txt.
+pytest>=8.0                     # verified 8.3.4
+pytest-asyncio>=0.23            # verified 0.25.0
+anyio>=4.0                      # verified 4.14.2
+ruff>=0.6

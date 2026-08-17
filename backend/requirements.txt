@@ -1,50 +1,59 @@
 # ---------------------------------------------------------------------------
-# RAGX backend dependencies
-# Python 3.10+
+# RAGX backend dependencies — Python 3.10+
+#
+# Constraints are MINIMUMS (`>=`), not exact pins. RAGX is commonly installed
+# into a Python that already hosts other projects, and exact pins would force
+# downgrades on packages those projects depend on. Upper bounds appear only
+# where a real breaking change exists.
+#
+# Verified working against the versions noted in the comments.
 # ---------------------------------------------------------------------------
 
 # --- Web framework ---------------------------------------------------------
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-pydantic==2.10.4
-pydantic-settings==2.7.0
+fastapi>=0.110,<1.0             # verified 0.115.6
+uvicorn[standard]>=0.30         # verified 0.34.0
+python-multipart>=0.0.9
+pydantic>=2.7,<3.0              # verified 2.13.4
+pydantic-settings>=2.3,<3.0     # verified 2.7.0
 
 # --- Persistence -----------------------------------------------------------
-SQLAlchemy[asyncio]==2.0.36
-asyncpg==0.30.0          # PostgreSQL async driver
-aiosqlite==0.20.0        # SQLite async driver (local dev fallback)
-alembic==1.14.0
-greenlet==3.1.1
+SQLAlchemy[asyncio]>=2.0.30,<3.0   # verified 2.0.36
+asyncpg>=0.29                      # PostgreSQL async driver
+aiosqlite>=0.20                    # SQLite async driver (zero-infra default)
+alembic>=1.13
+greenlet>=3.0                      # required by SQLAlchemy's async bridge
 
 # --- Vector / graph / lexical indexes --------------------------------------
-qdrant-client==1.12.2    # server mode + embedded local mode
-neo4j==5.27.0
-networkx==3.4.2          # local graph store fallback (no Neo4j required)
-rank-bm25==0.2.2
-numpy==1.26.4
+# qdrant-client >= 1.14 replaced `search()` with `query_points()`.
+# app/indexing/vector_store.py supports BOTH, so any version >= 1.9 works.
+qdrant-client>=1.9              # verified 1.19.0
+neo4j>=5.20                     # verified 6.2.0 (optional — NetworkX fallback exists)
+networkx>=3.1                   # verified 3.3
+rank-bm25>=0.2.2
+numpy>=1.24                     # verified 2.2.1
 
 # --- Cloud LLM providers (NO local LLMs) -----------------------------------
-google-genai==0.3.0      # Gemini
-groq==0.13.1             # Groq
+# google-genai 2.x kept the API surface RAGX uses; verified against 2.18.1.
+google-genai>=0.3               # verified 2.18.1
+groq>=0.11                      # verified 0.15.0
 
 # --- Document ingestion ----------------------------------------------------
-pymupdf==1.25.1          # PDF text, layout, embedded images
-pdfplumber==0.11.4       # PDF table extraction
-python-docx==1.1.2
-pandas==2.2.3
-Pillow==11.0.0
-beautifulsoup4==4.12.3
-lxml==5.3.0
+pymupdf>=1.24                   # PDF text, layout, embedded images — verified 1.28.2
+pdfplumber>=0.11                # PDF table extraction — verified 0.11.10
+python-docx>=1.1
+pandas>=2.1                     # verified 2.3.3
+Pillow>=10.0                    # verified 12.3.0
+beautifulsoup4>=4.12
+lxml>=5.0
 
 # --- Optional OCR (degrades gracefully if the tesseract binary is absent) ---
-pytesseract==0.3.13
+pytesseract>=0.3.10
 
-# --- Object storage (optional; local filesystem backend needs nothing) -----
-boto3==1.35.81
+# --- Object storage (optional; the local filesystem backend needs nothing) --
+boto3>=1.34
 
 # --- Infrastructure --------------------------------------------------------
-httpx==0.28.1
-tenacity==9.0.0
-structlog==24.4.0
-python-dotenv==1.0.1
+httpx>=0.27                     # verified 0.28.1
+tenacity>=8.2                   # verified 9.0.0
+structlog>=24.1                 # verified 24.4.0
+python-dotenv>=1.0

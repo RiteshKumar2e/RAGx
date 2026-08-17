@@ -113,12 +113,10 @@ def test_upload_and_index(client, indexed_document) -> None:
     assert detail["outline"], "markdown headings should produce an outline"
 
 
-def test_duplicate_upload_is_detected(client, indexed_document) -> None:
-    from tests.conftest import SAMPLE_PAPER
-
+def test_duplicate_upload_is_detected(client, indexed_document, sample_paper) -> None:
     response = client.post(
         "/api/v1/documents/upload",
-        files={"files": ("defectnet_copy.md", io.BytesIO(SAMPLE_PAPER), "text/markdown")},
+        files={"files": ("defectnet_copy.md", io.BytesIO(sample_paper), "text/markdown")},
     )
     assert response.json()["uploaded"][0]["duplicate_of"] == indexed_document
 

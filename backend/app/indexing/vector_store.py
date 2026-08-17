@@ -97,20 +97,23 @@ class QdrantVectorStore:
                             size=self.dimension, distance=models.Distance.COSINE
                         ),
                     )
-                    # Indexes that make modality/document filters cheap.
-                    for field_name, schema in (
-                        ("document_id", models.PayloadSchemaType.KEYWORD),
-                        ("modality", models.PayloadSchemaType.KEYWORD),
-                        ("page_number", models.PayloadSchemaType.INTEGER),
-                    ):
-                        try:
-                            self._client.create_payload_index(
-                                collection_name=self.collection,
-                                field_name=field_name,
-                                field_schema=schema,
-                            )
-                        except Exception:  # pragma: no cover - index may exist
-                            pass
+                    # Indexes that make modality/document filters cheap. They are
+                    # a no-op in embedded mode (which scans anyway), so they are
+                    # only created against a real server.
+                    if self.mode == "server":
+                        for field_name, schema in (
+                            ("document_id", models.PayloadSchemaType.KEYWORD),
+                            ("modality", models.PayloadSchemaType.KEYWORD),
+                            ("page_number", models.PayloadSchemaType.INTEGER),
+                        ):
+                            try:
+                                self._client.create_payload_index(
+                                    collection_name=self.collection,
+                                    field_name=field_name,
+                                    field_schema=schema,
+                                )
+                            except Exception:  # pragma: no cover - index may exist
+                                pass
                     log.info("vector.collection_created", collection=self.collection, dim=self.dimension)
 
             try:
@@ -213,6 +216,17 @@ class QdrantVectorStore:
         query_filter = self._build_filter(document_ids, modalities, exclude_chunk_ids)
 
         def _search() -> list[Any]:
+            # qdrant-client >= 1.14 replaced `search()` with `query_points()`.
+            # Support both so the same code runs against either version.
+            if hasattr(self._client, "query_points"):
+                return self._client.query_points(
+                    collection_name=self.collection,
+                    query=vector,
+                    limit=limit,
+                    query_filter=query_filter,
+                    score_threshold=score_threshold,
+                    with_payload=True,
+                ).points
             return self._client.search(
                 collection_name=self.collection,
                 query_vector=vector,
