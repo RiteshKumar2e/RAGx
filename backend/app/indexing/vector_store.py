@@ -22,6 +22,23 @@ from app.core.logging import get_logger
 
 log = get_logger("ragx.vector")
 
+# Embedded Qdrant takes an exclusive lock on its storage directory, so only one
+# process may hold it. Running a second backend (a forgotten `uvicorn`, a test
+# run, a reload loop) otherwise fails deep inside retrieval with an opaque
+# message and an empty result set.
+_LOCK_HINT = (
+    "The embedded Qdrant store at '{path}' is locked by another process. "
+    "Only one RAGX backend can use embedded mode at a time — stop the other "
+    "instance, or run a Qdrant server and set QDRANT_URL to share the index."
+)
+
+
+def _translate_storage_error(exc: Exception, path: str) -> StorageError:
+    text = str(exc)
+    if "already accessed by another instance" in text or "is locked" in text.lower():
+        return StorageError(_LOCK_HINT.format(path=path), detail=text[:300])
+    return StorageError("Qdrant is unavailable.", detail=text[:300])
+
 # Qdrant point ids must be UUIDs or unsigned ints; chunk ids are 32-char hex,
 # which maps to a UUID losslessly and reversibly.
 def chunk_id_to_point_id(chunk_id: str) -> str:
@@ -119,7 +136,7 @@ class QdrantVectorStore:
             try:
                 await asyncio.to_thread(_ensure)
             except Exception as exc:
-                raise StorageError("Qdrant is unavailable.", detail=str(exc)) from exc
+                raise _translate_storage_error(exc, self._settings.qdrant_path) from exc
             self._ready = True
 
     # ---------------------------------------------------------------- writes
@@ -239,7 +256,7 @@ class QdrantVectorStore:
         try:
             results = await asyncio.to_thread(_search)
         except Exception as exc:
-            raise StorageError("The Qdrant search failed.", detail=str(exc)) from exc
+            raise _translate_storage_error(exc, self._settings.qdrant_path) from exc
 
         hits: list[VectorHit] = []
         for point in results:
