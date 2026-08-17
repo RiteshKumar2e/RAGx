@@ -313,9 +313,14 @@ weights) are out of scope by design and are not referenced anywhere in the
 codebase or UI.
 
 ```
-Business logic  →  LLM Gateway  →  ┬→ Gemini  (reasoning, synthesis, vision, embeddings)
-                                   └→ Groq    (fast internal steps, fallback generation)
+Business logic  →  LLM Gateway  →  ┬→ Groq    (primary: reasoning, synthesis, fast internal steps)
+                                   └→ Gemini  (fallback generation + vision + embeddings)
 ```
+
+Provider roles are configurable via `PRIMARY_LLM_PROVIDER` / `FALLBACK_LLM_PROVIDER`.
+Two routes are **not** configurable, because only one provider can serve them:
+multimodal requests always go to Gemini (Groq's chat models cannot accept
+images), and embeddings always come from the Gemini embedding API.
 
 No module outside `app/llm/` imports a provider SDK. The gateway owns:
 

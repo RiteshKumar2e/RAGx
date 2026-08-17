@@ -20,6 +20,19 @@ from app.llm.base import LLMProvider, LLMRequest, LLMResponse, Message, Role, To
 log = get_logger("ragx.llm.gemini")
 
 
+def _is_rate_limited(exc: Exception) -> bool:
+    text = str(exc)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower()
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Errors worth retrying: rate limits and upstream unavailability."""
+    text = str(exc)
+    return any(code in text for code in ("429", "500", "502", "503", "504")) or (
+        "RESOURCE_EXHAUSTED" in text or "UNAVAILABLE" in text
+    )
+
+
 class GeminiProvider(LLMProvider):
     name = "gemini"
     supports_multimodal = True
@@ -34,6 +47,9 @@ class GeminiProvider(LLMProvider):
         self.input_cost_per_mtok = settings.gemini_input_cost_per_mtok
         self.output_cost_per_mtok = settings.gemini_output_cost_per_mtok
         self._timeout = settings.llm_timeout_seconds
+        # Embedding retries are more generous than chat retries: a rate-limit
+        # window can be tens of seconds, and losing them fails a whole ingest.
+        self._embed_max_retries = max(settings.llm_max_retries, 4)
         self._client: Any = None
         self._types: Any = None
         self._init_error: str | None = None
@@ -209,19 +225,54 @@ class GeminiProvider(LLMProvider):
             # and avoids re-indexing when the model's native size changes.
             config_kwargs["output_dimensionality"] = dimension
         config = types.EmbedContentConfig(**config_kwargs)
-        try:
-            response = await asyncio.wait_for(
-                client.aio.models.embed_content(
-                    model=self._embedding_model, contents=texts, config=config
-                ),
-                timeout=self._timeout,
-            )
-        except asyncio.TimeoutError as exc:
-            raise ProviderError("The Gemini embedding call timed out.") from exc
-        except Exception as exc:
-            raise ProviderError("The Gemini embedding call failed.", detail=str(exc)) from exc
 
-        return [list(item.values) for item in (response.embeddings or [])]
+        # Ingesting a large document issues many batches in quick succession,
+        # which reliably trips the per-minute quota on Gemini's free tier. A 429
+        # is recoverable by waiting, so retry it -- previously a single 429
+        # aborted the whole document.
+        attempts = max(1, self._embed_max_retries + 1)
+        delay = 2.0
+        last: Exception | None = None
+
+        for attempt in range(attempts):
+            try:
+                response = await asyncio.wait_for(
+                    client.aio.models.embed_content(
+                        model=self._embedding_model, contents=texts, config=config
+                    ),
+                    timeout=self._timeout,
+                )
+                return [list(item.values) for item in (response.embeddings or [])]
+            except asyncio.TimeoutError as exc:
+                last = exc
+            except Exception as exc:
+                last = exc
+                if not _is_transient(exc):
+                    raise ProviderError(
+                        "The Gemini embedding call failed.", detail=str(exc)[:400]
+                    ) from exc
+
+            if attempt < attempts - 1:
+                log.warning(
+                    "embeddings.retrying",
+                    attempt=attempt + 1,
+                    of=attempts,
+                    wait_seconds=round(delay, 1),
+                    rate_limited=_is_rate_limited(last) if last else False,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 30.0)
+
+        if last is not None and _is_rate_limited(last):
+            raise ProviderError(
+                "Gemini embedding quota exceeded, so the document was not fully indexed. "
+                "Wait for the quota window to reset, lower EMBEDDING_BATCH_SIZE, or upgrade "
+                "the API plan — then reindex the document.",
+                detail=str(last)[:400],
+            ) from last
+        raise ProviderError(
+            "The Gemini embedding call failed after retries.", detail=str(last)[:400]
+        ) from last
 
     # ---------------------------------------------------------------- health
     async def health(self) -> dict[str, Any]:

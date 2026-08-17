@@ -443,7 +443,7 @@ Purpose ──▶ provider selection ──▶ retry (backoff) ──▶ fallbac
 | Purpose group | Preferred | Rationale |
 |---|---|---|
 | query analysis, grading, rerank, claim extraction, evidence matching | Groq fast model | Latency dominates; these are short structured calls |
-| synthesis, planning, judging | configured primary (Gemini) | Depth matters more than latency |
+| synthesis, planning, judging | configured primary (Groq by default) | Depth matters more than latency |
 | anything with images | vision-capable only | No meaningful text-only fallback exists for a visual question |
 
 JSON responses are parsed tolerantly — models occasionally wrap JSON in prose or

@@ -80,9 +80,14 @@ class Settings(BaseSettings):
     # "hashing"   -> deterministic offline embedder, DEV/TEST ONLY. It carries
     #                no semantic knowledge; it exists so the pipeline, tests and
     #                CI can run without network access. Never use in production.
+    # Note: Groq has no embeddings API (its catalogue is chat/TTS/Whisper only),
+    # so embeddings always come from Gemini regardless of PRIMARY_LLM_PROVIDER.
     embedding_provider: Literal["gemini", "hashing"] = "gemini"
     embedding_dimension: int = 768
     embedding_batch_size: int = 32
+    # Pause between embedding batches. Large documents otherwise fire batches
+    # back to back and exhaust the per-minute quota on Gemini's free tier.
+    embedding_batch_delay_seconds: float = 0.5
 
     # -- Vector store (Qdrant) ---------------------------------------------
     # When ``qdrant_url`` is empty the client runs in embedded local mode,

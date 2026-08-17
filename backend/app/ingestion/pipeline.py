@@ -179,7 +179,13 @@ class IngestionPipeline:
             return outcome
 
         except Exception as exc:
+            # RagxError carries an actionable `detail` (quota exceeded, bad
+            # credentials, ...). Without appending it the UI only ever showed the
+            # generic headline, which is not enough to act on.
             message = str(exc)[:500]
+            detail = getattr(exc, "detail", None)
+            if detail and str(detail) not in message:
+                message = f"{message} — {str(detail)[:300]}"
             log.error("ingest.failed", document_id=document_id, error=message, exc_info=True)
             async with session_scope() as session:
                 document = await session.get(Document, document_id)

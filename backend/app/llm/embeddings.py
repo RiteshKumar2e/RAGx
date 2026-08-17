@@ -65,6 +65,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         settings = get_settings()
         self.dimension = settings.embedding_dimension
         self.batch_size = settings.embedding_batch_size
+        self.inter_batch_delay = settings.embedding_batch_delay_seconds
         self.model = settings.gemini_embedding_model
         self._provider = GeminiProvider()
 
@@ -74,7 +75,14 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
 
     async def _embed(self, texts: list[str], task_type: str) -> list[list[float]]:
         out: list[list[float]] = []
-        for start in range(0, len(texts), self.batch_size):
+        batches = range(0, len(texts), self.batch_size)
+        for index, start in enumerate(batches):
+            # Pace consecutive batches. Firing them back to back is what trips
+            # the per-minute quota on a large document; a short gap costs a few
+            # seconds of ingestion time and avoids a retry storm.
+            if index and self.inter_batch_delay:
+                await asyncio.sleep(self.inter_batch_delay)
+
             batch = [t if t.strip() else " " for t in texts[start : start + self.batch_size]]
             vectors = await self._provider.embed(
                 batch, task_type=task_type, dimension=self.dimension
