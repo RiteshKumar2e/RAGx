@@ -27,6 +27,7 @@ from app.core.logging import TraceRecorder, get_logger
 from app.llm.base import LLMProvider, LLMRequest, LLMResponse, Message
 from app.llm.gemini.provider import GeminiProvider
 from app.llm.groq.provider import GroqProvider
+from app.llm.retry import is_rate_limited, retry_delay_for
 
 log = get_logger("ragx.llm.gateway")
 
@@ -256,7 +257,21 @@ class LLMGateway:
                 last = exc
                 if attempt >= max_retries:
                     break
-                await asyncio.sleep(delay)
+                # Honour the delay the provider asked for. A token-per-minute
+                # limit typically clears in about a second, while a daily quota
+                # asks for far longer than it is worth blocking a request --
+                # retry_delay_for clamps that, so the attempt is spent usefully
+                # instead of on an arbitrary backoff.
+                wait = retry_delay_for(exc, delay)
+                log.info(
+                    "llm.retrying",
+                    provider=provider.name,
+                    purpose=request.purpose,
+                    attempt=attempt + 1,
+                    wait_seconds=round(wait, 2),
+                    rate_limited=is_rate_limited(exc),
+                )
+                await asyncio.sleep(wait)
                 delay *= 2
         raise last if last else ProviderError("The LLM call failed.")
 

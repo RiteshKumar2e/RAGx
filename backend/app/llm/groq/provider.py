@@ -110,6 +110,31 @@ class GroqProvider(LLMProvider):
         latency_ms = (time.perf_counter() - started) * 1000
         choice = response.choices[0] if response.choices else None
         text = (choice.message.content if choice and choice.message else "") or ""
+        finish_reason = getattr(choice, "finish_reason", None) if choice else None
+
+        if not text.strip():
+            # Groq's gpt-oss models are reasoning models: they spend output
+            # tokens on an internal reasoning channel before emitting any
+            # content. If max_output_tokens is small, the whole budget goes to
+            # reasoning and `content` comes back empty with finish_reason
+            # "length" -- a successful HTTP call carrying no answer.
+            #
+            # Returning that as success would hand the caller a blank answer and
+            # hide the cause. Raising instead lets the gateway retry or fall back
+            # to a provider that can actually answer.
+            reasoning = getattr(choice.message, "reasoning", None) if choice and choice.message else None
+            if finish_reason == "length":
+                raise ProviderError(
+                    f"Groq model '{kwargs['model']}' returned no content: the "
+                    f"{request.max_output_tokens}-token output budget was consumed by "
+                    "the model's internal reasoning. Raise max_output_tokens for this "
+                    "call, or configure a non-reasoning GROQ_MODEL.",
+                    detail=f"finish_reason=length, reasoning_chars={len(reasoning or '')}",
+                )
+            raise ProviderError(
+                f"Groq model '{kwargs['model']}' returned an empty response.",
+                detail=f"finish_reason={finish_reason}",
+            )
 
         raw_usage = getattr(response, "usage", None)
         if raw_usage is not None:
@@ -131,7 +156,7 @@ class GroqProvider(LLMProvider):
             usage=usage,
             latency_ms=latency_ms,
             cost_usd=self.estimate_cost(usage),
-            finish_reason=getattr(choice, "finish_reason", None) if choice else None,
+            finish_reason=finish_reason,
             raw={"usage_reported": usage.reported},
         )
 
@@ -172,7 +197,11 @@ class GroqProvider(LLMProvider):
             probe = LLMRequest(
                 messages=[Message.user("ping")],
                 purpose="healthcheck",
-                max_output_tokens=8,
+                # Enough headroom for a reasoning model to finish reasoning and
+                # still emit a token. A budget of ~8 is spent entirely on the
+                # reasoning channel, so the probe would report the provider
+                # unhealthy while the API was in fact reachable.
+                max_output_tokens=256,
                 temperature=0.0,
                 model=self._fast_model,
             )
