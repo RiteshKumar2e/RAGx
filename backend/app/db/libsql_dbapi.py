@@ -300,6 +300,15 @@ class Connection:
         try:
             self._inner.rollback()
         except _DRIVER_ERRORS as exc:
+            # "no transaction is active" means rollback's goal -- leave no
+            # transaction open -- is already met. This happens for real:
+            # SQLAlchemy's pool unconditionally rolls back a connection on
+            # checkin, and the client-side in_transaction flag can lag the
+            # server's, since Turso is a remote stream rather than a local
+            # file (e.g. across pool_recycle). Raising here would surface a
+            # spurious OperationalError from what is actually a no-op.
+            if "no transaction is active" in str(exc).lower():
+                return
             raise _translate(exc) from exc
 
     def close(self) -> None:

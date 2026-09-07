@@ -42,6 +42,10 @@ UNAUTHORIZED = (
     'Hrana: `api error: `status=401 Unauthorized, body={"error":"Unauthorized: '
     'empty JWT token"}`'
 )
+NO_ACTIVE_TRANSACTION = (
+    'Hrana: `stream error: `Error { message: "SQLite error: cannot rollback - '
+    'no transaction is active", code: "SQLITE_UNKNOWN" }`'
+)
 
 
 @pytest.mark.parametrize(
