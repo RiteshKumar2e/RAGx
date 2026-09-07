@@ -232,13 +232,14 @@ class DocumentService:
         if not document.object_key:
             raise ValidationError("The original file is no longer available; re-upload it instead.")
 
-        await self.pipeline.remove_document(document_id)
+        await self.pipeline.remove_document(document_id, delete_original=False)
         await session.execute(delete(EntityRelation).where(EntityRelation.document_id == document_id))
         await session.execute(delete(DocumentEntity).where(DocumentEntity.document_id == document_id))
         await session.execute(delete(Chunk).where(Chunk.document_id == document_id))
 
         document.status = DocumentStatus.UPLOADED
         document.processing_steps = self.pipeline.initial_steps()
+        document.status_detail = None
         document.error_message = None
         document.chunk_count = 0
         document.entity_count = 0

@@ -327,3 +327,36 @@ def test_delete_removes_from_all_indexes(client) -> None:
     assert after["total_chunks"] < before["total_chunks"]
     assert after["vectors_indexed"] <= before["vectors_indexed"]
     assert after["bm25_documents"] < before["bm25_documents"]
+
+
+# ------------------------------------------------------------------- reindex
+def test_reindex_reprocesses_without_losing_the_source_file(client) -> None:
+    """A regression test for reindex deleting the file it needs to re-read.
+
+    ``reindex()`` clears a document's chunks/vectors/graph entries before
+    reprocessing via the same teardown helper ``delete_document()`` uses. That
+    helper also deletes the document's own object-storage key -- correct for a
+    real deletion, but reindex still needs that file to re-run the pipeline on,
+    so wiping it made every reindex fail immediately with "not found in local
+    storage" instead of reprocessing.
+    """
+    response = client.post(
+        "/api/v1/documents/upload",
+        files={
+            "files": (
+                "reindex-me.txt",
+                io.BytesIO(b"Content that gets reprocessed more than once. " * 20),
+                "text/plain",
+            )
+        },
+    )
+    document_id = response.json()["uploaded"][0]["document_id"]
+    assert client.get(f"/api/v1/documents/{document_id}").json()["status"] == "ready"
+
+    reindex_response = client.post(f"/api/v1/documents/{document_id}/reindex")
+    assert reindex_response.status_code == 200, reindex_response.text
+
+    # BackgroundTasks run synchronously on TestClient, so processing is done here.
+    detail = client.get(f"/api/v1/documents/{document_id}").json()
+    assert detail["status"] == "ready", detail
+    assert not detail["error_message"]

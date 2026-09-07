@@ -448,8 +448,15 @@ class IngestionPipeline:
         return counts
 
     # ------------------------------------------------------------- teardown
-    async def remove_document(self, document_id: str) -> None:
-        """Delete a document from every index. Called before the SQL delete."""
+    async def remove_document(self, document_id: str, *, delete_original: bool = True) -> None:
+        """Delete a document from every index. Called before the SQL delete, and
+        also before a reindex to clear stale chunks/vectors/graph entries.
+
+        ``delete_original=False`` keeps the source file in object storage --
+        reindexing re-reads it at the top of :meth:`process`, so deleting it
+        here would make every reindex fail with "not found in local storage"
+        immediately after clearing the old state.
+        """
         await asyncio.gather(
             self.vector_store.delete_document(document_id),
             self.bm25.remove_document(document_id),
@@ -458,7 +465,9 @@ class IngestionPipeline:
         )
         async with session_scope() as session:
             document = await session.get(Document, document_id)
-            keys = [document.object_key] if document and document.object_key else []
+            keys = []
+            if delete_original and document and document.object_key:
+                keys.append(document.object_key)
             chunk_keys = await session.scalars(
                 select(Chunk.asset_key).where(
                     Chunk.document_id == document_id, Chunk.asset_key.is_not(None)
