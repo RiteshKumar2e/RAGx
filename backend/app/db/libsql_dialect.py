@@ -19,7 +19,10 @@ Only four things differ from SQLAlchemy's stock pysqlite dialect:
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import functools
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from sqlalchemy import pool
@@ -28,6 +31,17 @@ from sqlalchemy.engine import AdaptedConnection
 from sqlalchemy.util.concurrency import await_only
 
 from app.db import libsql_dbapi
+
+# Every other blocking call in RAGX (PDF parsing, OCR, Qdrant/graph/BM25 index
+# I/O, object storage) goes through ``asyncio.to_thread``, which shares
+# Python's small default executor (``min(32, cpu_count + 4)``). Turso aborts an
+# interactive transaction left idle between statements for too long (~30s) --
+# so under concurrent ingestion, a DB round trip queued behind CPU-bound work
+# on that shared pool can blow past the idle timeout before it even reaches
+# the network, failing with "stream was idle for too long; retry the
+# transaction" on whichever statement runs next. A dedicated pool keeps DB
+# calls off that queue so their only latency is the network round trip itself.
+_DB_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ragx-db")
 
 
 def _off_loop(fn, *args, **kwargs):
@@ -42,8 +56,17 @@ def _off_loop(fn, *args, **kwargs):
       _require_await=True)``, which raises ``AwaitRequired`` unless the
       operation actually suspends. ``await_only`` on a real awaitable is what
       satisfies that contract.
+
+    Dispatched to :data:`_DB_EXECUTOR` rather than ``asyncio.to_thread`` -- see
+    its comment. Context vars are propagated manually (``asyncio.to_thread``
+    does this internally but only for the default executor) so structured
+    logging context (e.g. request id) still appears in log lines emitted from
+    the worker thread.
     """
-    return await_only(asyncio.to_thread(lambda: fn(*args, **kwargs)))
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    call = functools.partial(ctx.run, fn, *args, **kwargs)
+    return await_only(loop.run_in_executor(_DB_EXECUTOR, call))
 
 
 class AsyncAdapt_libsql_cursor:
