@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
 import { Compass } from 'lucide-react';
 import { EmptyState } from '../components/common';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 export default function NotFound() {
+  useDocumentTitle('Page not found');
+
   return (
     <EmptyState
       icon={Compass}

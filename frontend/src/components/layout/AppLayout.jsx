@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import ProviderIndicator from './ProviderIndicator';
 import ErrorBoundary from '../common/ErrorBoundary';
 import { useSystem } from '../../context/SystemContext';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 
 const TITLES = {
   '/dashboard': 'Dashboard',
@@ -28,6 +29,8 @@ export default function AppLayout() {
   const title =
     TITLES[location.pathname] ||
     (location.pathname.startsWith('/knowledge-base/') ? 'Document' : 'RAGX');
+
+  useDocumentTitle(title);
 
   return (
     <div className="min-h-screen bg-ink-50">

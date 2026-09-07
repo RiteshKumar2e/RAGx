@@ -16,6 +16,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { STRATEGIES, STRATEGY_ORDER } from '../utils/constants';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const PIPELINE = [
   { label: 'Query', icon: FileSearch },
@@ -78,6 +79,8 @@ function StrategyCard({ name }) {
 }
 
 export default function LandingPage() {
+  useDocumentTitle('RAGX — Adaptive Multi-Strategy Research Intelligence', { exact: true });
+
   return (
     <div className="min-h-screen bg-white">
       {/* ---------------------------------------------------------------- nav */}
