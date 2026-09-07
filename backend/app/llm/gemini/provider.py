@@ -16,21 +16,11 @@ from app.core.errors import ProviderError, ProviderNotConfiguredError
 from app.core.logging import get_logger
 from app.core.text import estimate_tokens
 from app.llm.base import LLMProvider, LLMRequest, LLMResponse, Message, Role, TokenUsage
+from app.llm.retry import is_rate_limited as _is_rate_limited
+from app.llm.retry import is_transient as _is_transient
+from app.llm.retry import retry_delay_for
 
 log = get_logger("ragx.llm.gemini")
-
-
-def _is_rate_limited(exc: Exception) -> bool:
-    text = str(exc)
-    return "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower()
-
-
-def _is_transient(exc: Exception) -> bool:
-    """Errors worth retrying: rate limits and upstream unavailability."""
-    text = str(exc)
-    return any(code in text for code in ("429", "500", "502", "503", "504")) or (
-        "RESOURCE_EXHAUSTED" in text or "UNAVAILABLE" in text
-    )
 
 
 class GeminiProvider(LLMProvider):
@@ -253,14 +243,20 @@ class GeminiProvider(LLMProvider):
                     ) from exc
 
             if attempt < attempts - 1:
+                # Honour the delay Gemini asked for (retryDelay in the 429 body)
+                # instead of a blind schedule -- retrying before the window
+                # reopens burns an attempt for nothing, and this is the path
+                # most likely to hit quota, since one large document fires many
+                # batches back to back.
+                wait = retry_delay_for(last, delay)
                 log.warning(
                     "embeddings.retrying",
                     attempt=attempt + 1,
                     of=attempts,
-                    wait_seconds=round(delay, 1),
+                    wait_seconds=round(wait, 1),
                     rate_limited=_is_rate_limited(last) if last else False,
                 )
-                await asyncio.sleep(delay)
+                await asyncio.sleep(wait)
                 delay = min(delay * 2, 30.0)
 
         if last is not None and _is_rate_limited(last):
