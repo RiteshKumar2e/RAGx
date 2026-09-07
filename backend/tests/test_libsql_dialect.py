@@ -152,6 +152,34 @@ def test_transport_failures_count_as_disconnects() -> None:
     assert not dialect.is_disconnect(violation, None, None)
 
 
+def test_rollback_with_no_active_transaction_is_a_no_op(monkeypatch) -> None:
+    """SQLAlchemy's pool rolls back every connection it checks in, unconditionally.
+
+    Turso is a remote stream rather than a local file, so the client's
+    in_transaction bookkeeping can lag the server's (e.g. across pool_recycle).
+    When that happens the driver raises instead of no-op'ing the way sqlite3
+    does -- but "no transaction is active" is rollback's goal already met, not
+    a failure, so it must not propagate as an OperationalError.
+    """
+
+    class _FakeInner:
+        def rollback(self):
+            raise ValueError(NO_ACTIVE_TRANSACTION)
+
+    connection = libsql_dbapi.Connection(_FakeInner())
+    connection.rollback()  # must not raise
+
+
+def test_rollback_still_raises_for_other_failures() -> None:
+    class _FakeInner:
+        def rollback(self):
+            raise ValueError("Hrana: connection reset by peer")
+
+    connection = libsql_dbapi.Connection(_FakeInner())
+    with pytest.raises(libsql_dbapi.OperationalError):
+        connection.rollback()
+
+
 def test_ragx_dialect_wins_the_registry_name() -> None:
     """`sqlalchemy-libsql` claims the same name but cannot import on Windows."""
     from sqlalchemy.dialects import registry
